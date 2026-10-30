@@ -46,9 +46,22 @@ export default function Dashboard({ onIrACarga }: { onIrACarga: () => void }) {
       <div className="fila" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
         <h2>Cobranza y reservas</h2>
         <div className="fila">
-          <button className="primario" onClick={() => void generarReporteExcel()} disabled={calculando}>
-            Descargar reporte Excel
-          </button>
+          <button
+  className="primario"
+  onClick={async () => {
+    console.log('click, calculando =', calculando);
+    try {
+      await generarReporteExcel();
+      console.log('reporte generado');
+    } catch (e) {
+      console.error('Error al generar reporte:', e);
+      alert('Error: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  }}
+  disabled={calculando}
+>
+  Descargar reporte Excel
+</button>
         </div>
       </div>
 
