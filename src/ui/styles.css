@@ -234,6 +234,57 @@ tfoot td {
   color: #ff8a80;
 }
 
+/* Tarjetas del dashboard: KPIs con cara de "card" */
+.tarjetas .kpi {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 96px;
+}
+
+.tarjetas .kpi .valor {
+  font-size: 28px;
+}
+
+/* Grid de gráficos */
+.grid-graficos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.grafico-panel {
+  margin-bottom: 0;
+}
+
+.grafico-panel h3 {
+  margin-top: 0;
+}
+
+/* Centro del anillo (doughnut) */
+.anillo-centro {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+}
+
+.anillo-total {
+  display: block;
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .grid-graficos {
+    grid-template-columns: 1fr;
+  }
+}
+
 .fila {
   display: flex;
   gap: 12px;

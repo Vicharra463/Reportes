@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AppCtx, useProveedor } from './ui/uso';
 import CargaDatos from './ui/vistas/CargaDatos';
 import Dashboard from './ui/vistas/Dashboard';
+import Proyectados from './ui/vistas/Proyectados';
 import Stock from './ui/vistas/Stock';
 import PorRevisar from './ui/vistas/PorRevisar';
 import Catalogos from './ui/vistas/Catalogos';
@@ -9,9 +10,9 @@ import Historial from './ui/vistas/Historial';
 import ConfiguracionVista from './ui/vistas/ConfiguracionVista';
 import { Cargando } from './ui/componentes';
 
-type Vista = 'dashboard' | 'carga' | 'stock' | 'revision' | 'catalogos' | 'historial' | 'config';
+type Vista = 'dashboard' | 'proyectados' | 'carga' | 'stock' | 'revision' | 'catalogos' | 'historial' | 'config';
 
-function Icono({ nombre }: { nombre: 'dashboard' | 'carga' | 'stock' | 'revision' | 'catalogos' | 'historial' | 'config' }) {
+function Icono({ nombre }: { nombre: 'dashboard' | 'proyectados' | 'carga' | 'stock' | 'revision' | 'catalogos' | 'historial' | 'config' }) {
   const p = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.7, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
   switch (nombre) {
     case 'dashboard':
@@ -21,6 +22,13 @@ function Icono({ nombre }: { nombre: 'dashboard' | 'carga' | 'stock' | 'revision
           <rect x="13" y="3" width="8" height="5" rx="1.5" />
           <rect x="13" y="10" width="8" height="11" rx="1.5" />
           <rect x="3" y="13" width="8" height="8" rx="1.5" />
+        </svg>
+      );
+    case 'proyectados':
+      return (
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden {...p}>
+          <path d="M3 17.5 9 11l4 4 8-8.5" />
+          <path d="M15 6h6v6" />
         </svg>
       );
     case 'carga':
@@ -71,6 +79,7 @@ function Icono({ nombre }: { nombre: 'dashboard' | 'carga' | 'stock' | 'revision
 
 const TITULOS: Record<Vista, string> = {
   dashboard: 'Dashboard',
+  proyectados: 'Proyectados',
   carga: 'Cargar Excel',
   stock: 'Stock',
   revision: 'Por revisar',
@@ -98,6 +107,7 @@ function Contenido() {
 
   const tabs: { id: Vista; etiqueta: string; icono: Parameters<typeof Icono>[0]['nombre']; contador?: number }[] = [
     { id: 'dashboard', etiqueta: 'Dashboard', icono: 'dashboard' },
+    { id: 'proyectados', etiqueta: 'Proyectados', icono: 'proyectados' },
     { id: 'carga', etiqueta: 'Cargar Excel', icono: 'carga' },
     { id: 'stock', etiqueta: 'Stock', icono: 'stock' },
     { id: 'revision', etiqueta: 'Por revisar', icono: 'revision', contador: revisiones + errores || undefined },
@@ -154,15 +164,16 @@ function Contenido() {
         </header>
 
         {app.error && <div className="banner err">{app.error}</div>}
-        {(revisiones > 0 || errores > 0) && vista === 'dashboard' && (
+        {(revisiones > 0 || errores > 0) && (vista === 'dashboard' || vista === 'proyectados') && (
           <div className="banner warn">
-            Hay {revisiones} fila(s) en revisión y {errores} en error. El reporte no está “válido” hasta conciliar.{' '}
+            {revisiones + errores} fila(s) en revisión {errores > 0 ? `y ${errores} en error ` : ''}— el reporte no
+            está “válido” hasta resolverlas y conciliar (los controles de coherencia del Dashboard).{' '}
             <button className="chico" onClick={() => setVista('revision')}>
               Revisar ahora
             </button>
           </div>
         )}
-        {!valido && vista === 'dashboard' && app.modelo && (
+        {!valido && (vista === 'dashboard' || vista === 'proyectados') && app.modelo && (
           <div className="banner err">
             Conciliación: {app.modelo.dashboard.conciliacion.filter((c) => !c.ok).map((c) => c.nombre).join(' · ')}
           </div>
@@ -171,6 +182,9 @@ function Contenido() {
         <main>
           {vista === 'dashboard' && (
             <Dashboard onIrACarga={() => { setVista('carga'); setIrACarga(true); }} />
+          )}
+          {vista === 'proyectados' && (
+            <Proyectados onIrARevision={() => { setVista('carga'); setIrACarga(true); }} />
           )}
           {vista === 'carga' && (
             <CargaDatos arrancarEnPaso={irACarga} onCargado={() => { setVista('dashboard'); setIrACarga(false); }} />

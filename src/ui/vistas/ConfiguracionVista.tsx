@@ -1,6 +1,7 @@
 import { useApp } from '../uso';
 import type { Configuracion } from '../../dominio/configuracion';
 import type { MapeoColumnas } from '../../tipos';
+import { hayTasas, tasaVigente, TC_DIAS_TOLERANCIA } from '../../dominio/tc';
 
 const ROLES: { rol: keyof MapeoColumnas; etiqueta: string }[] = [
   { rol: 'fecha', etiqueta: 'Fecha' },
@@ -26,7 +27,7 @@ const ROLES: { rol: keyof MapeoColumnas; etiqueta: string }[] = [
 ];
 
 export default function ConfiguracionVista() {
-  const { cfg, editarCfg } = useApp();
+  const { cfg, editarCfg, tc } = useApp();
   const mutar = (seccion: string, f: (c: Configuracion) => void) => void editarCfg(seccion, f);
 
   const texto = (valor: string, set: (v: string) => void, ancho = 340) => (
@@ -78,6 +79,94 @@ export default function ConfiguracionVista() {
               <option value="half-even">half-even (bancario)</option>
             </select>
           </label>
+        </div>
+      </div>
+
+      <div className="panel">
+        <h3>Tipo de cambio USD → soles</h3>
+        <p className="difuso">
+          Prioridad por día: tabla manual → tasa derivada de los datos (importe soles ÷ importe $) → fecha previa
+          cercana (≤ {TC_DIAS_TOLERANCIA} días) → defecto. Si no hay tasa, la app muestra solo USD: nunca inventa un valor.
+        </p>
+        <div className="fila" style={{ gap: 20 }}>
+          <label>
+            Tasa por defecto (soles por USD){' '}
+            <input
+              value={cfg.tc.defecto}
+              placeholder="ej. 3.75"
+              style={{ width: 110 }}
+              onChange={(e) => mutar('tc.defecto', (c) => { c.tc.defecto = e.target.value; })}
+            />
+          </label>
+          <span className="difuso">
+            {hayTasas(tc)
+              ? `Vigente hoy: ${tasaVigente(tc)?.toFixed(4)} · derivadas de los datos: ${tc.derivadas.size} días · manuales: ${tc.manual.length}`
+              : 'Sin tasas todavía: cargá la defecto o importá un Excel con importe en soles.'}
+          </span>
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <strong>Tasas manuales por fecha</strong>
+          <table style={{ marginTop: 8 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left' }}>Fecha (AAAA-MM-DD)</th>
+                <th style={{ textAlign: 'left' }}>Tasa (soles por USD)</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {cfg.tc.manual.map((m, i) => (
+                <tr key={i}>
+                  <td>
+                    <input
+                      value={m.fecha}
+                      placeholder="2026-01-15"
+                      style={{ width: 140 }}
+                      onChange={(e) =>
+                        mutar('tc.manual', (c) => { c.tc.manual[i] = { ...c.tc.manual[i], fecha: e.target.value }; })
+                      }
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={m.tasa}
+                      placeholder="3.75"
+                      style={{ width: 110 }}
+                      onChange={(e) =>
+                        mutar('tc.manual', (c) => { c.tc.manual[i] = { ...c.tc.manual[i], tasa: e.target.value }; })
+                      }
+                    />
+                  </td>
+                  <td>
+                    <button
+                      className="fantasma"
+                      onClick={() => mutar('tc.manual', (c) => { c.tc.manual.splice(i, 1); })}
+                    >
+                      Quitar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {!cfg.tc.manual.length && (
+                <tr>
+                  <td colSpan={3} className="difuso">
+                    Sin tasas manuales. Las derivadas de los datos cubren los días que traen importe en soles.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <button
+            style={{ marginTop: 8 }}
+            onClick={() =>
+              mutar('tc.manual', (c) => {
+                c.tc.manual.push({ fecha: new Date().toISOString().slice(0, 10), tasa: '' });
+                c.tc.manual.sort((a, b) => a.fecha.localeCompare(b.fecha));
+              })
+            }
+          >
+            + Agregar tasa
+          </button>
         </div>
       </div>
 

@@ -4,6 +4,8 @@ import { obtenerLibro, primerasFilas, mapeoSugerido } from '../../io/leerExcel';
 import type { ArchivoEnCola, MapeoColumnas, Simulacion, TipoArchivo } from '../../tipos';
 import type { SimulacionConArchivos } from '../../pipeline/importar';
 import { numPlain, pct, usd } from '../formato';
+import { fechaCorta } from '../formato';
+import * as alertas from '../alertas';
 
 const ROLES: { rol: keyof MapeoColumnas; etiqueta: string }[] = [
   { rol: 'fecha', etiqueta: 'Fecha' },
@@ -134,6 +136,55 @@ export default function CargaDatos({ arrancarEnPaso, onCargado }: { arrancarEnPa
         </div>
       )}
 
+      {pasoActual === 1 && app.lotes.length > 0 && (
+        <div className="panel">
+          <h3>Archivos importados ({app.lotes.length})</h3>
+          <p className="difuso" style={{ marginTop: 0 }}>
+            Si cargaste un archivo por error, eliminá su lote: se borran solo sus filas y todo se recalcula.
+          </p>
+          <div className="scroll-x">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Archivo</th>
+                  <th>Tipo</th>
+                  <th className="num">Filas</th>
+                  <th>Estado</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {app.lotes.map((l) => (
+                  <tr key={l.id}>
+                    <td className="mini">{fechaCorta(l.fechaISO)}</td>
+                    <td>{l.archivo}</td>
+                    <td>
+                      <span className="badge info">{l.tipo}</span>
+                    </td>
+                    <td className="num">{numPlain(l.filasImportadas)}</td>
+                    <td>
+                      {l.estado === 'confirmado' ? (
+                        <span className="badge ok">importado</span>
+                      ) : (
+                        <span className="badge warn">eliminado</span>
+                      )}
+                    </td>
+                    <td>
+                      {l.estado === 'confirmado' && l.id !== undefined && (
+                        <button className="peligro chico" onClick={() => void app.revertirLote(l.id!)}>
+                          Eliminar
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {pasoActual === 2 && (
         <div>
           {app.cola.length === 0 && <div className="banner warn">No hay archivos en la cola. Volvé al paso 1.</div>}
@@ -239,7 +290,20 @@ function ArchivoEditor({ a, preview }: { a: ArchivoEnCola; preview: ReturnType<t
           <strong>{a.nombre}</strong>{' '}
           <span className="badge info">{a.tipo}</span> {a.hashCalculado && <span className="mini">hash ok</span>}
         </div>
-        <button className="peligro chico" onClick={() => quitarDeCola(a.id)}>
+        <button
+          className="peligro chico"
+          onClick={() => {
+            void (async () => {
+              const ok = await alertas.confirmar({
+                titulo: 'Quitar archivo de la cola',
+                texto: `¿Sacar “${a.nombre}” de la cola? No se importó nada todavía, así que no se pierden datos.`,
+                peligro: true,
+                confirmarTexto: 'Quitar',
+              });
+              if (ok) quitarDeCola(a.id);
+            })();
+          }}
+        >
           Quitar
         </button>
       </div>

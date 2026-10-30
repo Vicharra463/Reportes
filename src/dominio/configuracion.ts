@@ -46,6 +46,13 @@ export interface EstadoReservaCat {
   color: string;
 }
 
+export interface TcManual {
+  /** 'YYYY-MM-DD' */
+  fecha: string;
+  /** soles por USD, decimal como string */
+  tasa: string;
+}
+
 export interface Configuracion {
   version: number;
   moneda: string;
@@ -74,6 +81,11 @@ export interface Configuracion {
   };
   mapeosPorTipo: Record<string, MapeoColumnas>;
   avisoCuotaMB: number;
+  /** Tipo de cambio USD → soles: tabla manual por fecha + tasa por defecto. */
+  tc: {
+    defecto: string;
+    manual: TcManual[];
+  };
 }
 
 export const ESTADOS_RESERVA_SEMILLA: EstadoReservaCat[] = [
@@ -153,6 +165,7 @@ export function configPorDefecto(): Configuracion {
       },
     },
     avisoCuotaMB: 4.5,
+    tc: { defecto: '', manual: [] },
   };
 }
 
@@ -176,6 +189,7 @@ export function fusionarConfig(base: Configuracion, guardada: Partial<Configurac
     redondeo: { ...base.redondeo, ...(guardada.redondeo ?? {}) },
     catalogos: { ...base.catalogos, ...(guardada.catalogos ?? {}) },
     mapeosPorTipo: { ...base.mapeosPorTipo, ...(guardada.mapeosPorTipo ?? {}) },
+    tc: { ...base.tc, ...(guardada.tc ?? {}), manual: guardada.tc?.manual ?? base.tc.manual },
   };
   return out;
 }

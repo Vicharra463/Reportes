@@ -16,6 +16,7 @@ import type {
 } from '../tipos';
 import { configPorDefecto, cargarConfig, guardarConfig, type Configuracion } from '../dominio/configuracion';
 import { calcular, type ModeloCalculado } from '../dominio/calcular';
+import { construirTc, tasaPara, tasaVigente as vigente, type TcEstado } from '../dominio/tc';
 import { crearReglaCorreccion } from '../dominio/reglas';
 import { canonicoColor, canonicoModelo } from '../dominio/clasificar';
 import { ejecutarCalculo } from '../pipeline/ejecutar';
@@ -44,6 +45,12 @@ export interface AppApi {
   modelo: ModeloCalculado | null;
   calculando: boolean;
   error: string | null;
+  /** Estado del tipo de cambio USD→soles (manual + derivado de los datos). */
+  tc: TcEstado;
+  /** Tasa para una fecha concreta; null = sin tasa (no se inventa). */
+  tasaDe: (fechaISO: string | null | undefined) => number | null;
+  /** Tasa vigente (último día conocido o defecto) para agregados sin fecha. */
+  tasaActual: () => number | null;
   // cola de carga
   agregarArchivos: (files: File[]) => Promise<void>;
   cola: ArchivoEnCola[];
@@ -107,6 +114,12 @@ export function useProveedor(): AppApi {
       setCalculando(false);
     }
   }, []);
+
+  // Tipo de cambio: se reconstruye cuando cambia la config o los registros
+  // (los registros cambian siempre junto con un recálculo).
+  const tc = useMemo(() => construirTc(cfg, registrosRef.current), [cfg, modelo]);
+  const tasaDe = useCallback((fechaISO: string | null | undefined) => tasaPara(tc, fechaISO), [tc]);
+  const tasaActual = useCallback(() => vigente(tc), [tc]);
 
   // ------------------------------------------------------------------ init
   useEffect(() => {
@@ -397,6 +410,7 @@ export function useProveedor(): AppApi {
         cambios,
         reglas,
         cfg: cfgRef.current,
+        tc,
         generadoISO: new Date().toISOString(),
       };
       await descargarReporte(datos);
@@ -406,7 +420,7 @@ export function useProveedor(): AppApi {
     } finally {
       alertas.cerrarCargando();
     }
-  }, [modelo, cambios, reglas]);
+  }, [modelo, cambios, reglas, tc]);
 
   const exportarBackup = useCallback(() => {
     const b = armarBackup({
@@ -462,6 +476,9 @@ export function useProveedor(): AppApi {
       modelo,
       calculando,
       error,
+      tc,
+      tasaDe,
+      tasaActual,
       cola,
       agregarArchivos,
       quitarDeCola,
@@ -490,6 +507,9 @@ export function useProveedor(): AppApi {
       modelo,
       calculando,
       error,
+      tc,
+      tasaDe,
+      tasaActual,
       cola,
       agregarArchivos,
       quitarDeCola,

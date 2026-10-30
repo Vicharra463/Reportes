@@ -187,6 +187,61 @@ describe('stock', () => {
   });
 });
 
+describe('propagación por evidencia entre filas', () => {
+  it('una fila sin modelo hereda la clasificación de otra fila con la misma clave de texto', () => {
+    const a = mkReg({
+      categoria: 'VEHICULOS',
+      documento: 'BV-70',
+      documentoTipo: 'BV',
+      importeUsd: '2690.00',
+      descripcion: 'MOTO XYZ IMPORTADA RARA',
+      modeloColumna: 'CB190R 2.0',
+      sku: 'SKU-RARO-001',
+    });
+    const b = mkReg({
+      fila: 2,
+      categoria: 'VEHICULOS',
+      documento: 'BV-71',
+      documentoTipo: 'BV',
+      importeUsd: '2690.00',
+      descripcion: 'MOTO XYZ IMPORTADA RARA',
+      sku: 'SKU-RARO-001',
+    });
+    const res = corrida([a, b]);
+    expect(a.clasifModelo?.valor).toBe('CB190R 2.0');
+    // b no tiene columna Modelo ni el SKU en el catálogo: hereda por evidencia
+    expect(b.clasifModelo?.valor).toBe('CB190R 2.0');
+    expect(b.clasifModelo?.fuente).toBe('evidencia');
+    expect(res.avisos.some((x) => x.includes('evidencia'))).toBe(true);
+  });
+
+  it('no hereda si las filas con la misma clave discrepan del valor', () => {
+    const a = mkReg({
+      categoria: 'VEHICULOS',
+      documento: 'BV-72',
+      documentoTipo: 'BV',
+      importeUsd: '2690.00',
+      descripcion: 'MOTO XYZ IMPORTADA RARA',
+      modeloColumna: 'CB190R 2.0',
+      sku: 'SKU-RARO-001',
+    });
+    const c = mkReg({
+      fila: 3,
+      categoria: 'VEHICULOS',
+      documento: 'BV-73',
+      documentoTipo: 'BV',
+      importeUsd: '2690.00',
+      descripcion: 'MOTO XYZ IMPORTADA RARA',
+      modeloColumna: 'XR150L',
+      sku: 'SKU-RARO-001',
+    });
+    corrida([a, c]);
+    // ambas ya venían clasificadas: la evidencia no pisa clasificaciones existentes
+    expect(a.clasifModelo?.valor).toBe('CB190R 2.0');
+    expect(c.clasifModelo?.valor).toBe('XR150L');
+  });
+});
+
 describe('resumen por modelo', () => {
   it('cuenta clientes distintos (normalizados) con reserva por modelo', () => {
     const p1 = pedidoBase(20, 'CB190R-AZU_CB', 'CB190R AZUL');

@@ -323,6 +323,74 @@ export function calcular(ctx: ContextoCalculo): ModeloCalculado {
     }
   }
 
+  // 5b) propagación por evidencia entre filas: si una fila ya quedó clasificada
+  // con confianza suficiente, otras filas con la MISMA clave de texto (SKU,
+  // descripción o glosa normalizada) heredan esa relación. No es adivinar:
+  // es reutilizar una relación ya demostrada en los propios datos, y solo
+  // cuando TODAS las filas con esa clave coinciden en el mismo valor.
+  {
+    const eVista = new Map<string, { valores: Set<string>; conf: number }>();
+    const clavesDe = (r: Registro): string[] => {
+      const ks: string[] = [];
+      if (r.sku) ks.push(`sku:${normalizar(r.sku)}`);
+      if (r.descripcion) ks.push(`desc:${normalizar(r.descripcion)}`);
+      if (r.glosa) ks.push(`glosa:${normalizar(r.glosa)}`);
+      return ks.filter((k) => k.split(':')[1].length >= 5);
+    };
+    for (const r of registros) {
+      if (r.estado === 'error' || r.duplicado) continue;
+      const vals: [string, string][] = [];
+      if (r.clasifModelo?.valor) vals.push(['modelo', r.clasifModelo.valor]);
+      if (r.clasifColor?.valor) vals.push(['color', r.clasifColor.valor]);
+      for (const [tipo, valor] of vals) {
+        for (const k of clavesDe(r)) {
+          const kk = `${tipo}|${k}`;
+          const e = eVista.get(kk);
+          const conf = tipo === 'modelo' ? (r.clasifModelo?.confianza ?? 1) : (r.clasifColor?.confianza ?? 1);
+          if (!e) eVista.set(kk, { valores: new Set([valor]), conf });
+          else {
+            e.valores.add(valor);
+            if (conf < e.conf) e.conf = conf;
+          }
+        }
+      }
+    }
+    let heredadas = 0;
+    for (const r of registros) {
+      if (r.estado === 'error' || r.duplicado) continue;
+      for (const [tipo, actual] of [
+        ['modelo', r.clasifModelo],
+        ['color', r.clasifColor],
+      ] as const) {
+        if (actual && actual.valor) continue; // ya clasificado: no se pisa
+        for (const k of clavesDe(r)) {
+          const e = eVista.get(`${tipo}|${k}`);
+          if (!e || e.valores.size !== 1) continue; // solo unanimidad
+          const valor = [...e.valores][0];
+          const conf = Math.min(e.conf, 0.97);
+          if (conf < cfg.umbralConfianza) continue;
+          const nueva = {
+            valor,
+            tipo: tipo as 'modelo' | 'color',
+            columna: 'evidencia',
+            textoMatch: k,
+            confianza: Math.round(conf * 1000) / 1000,
+            fuente: 'evidencia',
+          };
+          if (tipo === 'modelo') r.clasifModelo = nueva;
+          else r.clasifColor = nueva;
+          heredadas++;
+          break;
+        }
+      }
+    }
+    if (heredadas) {
+      avisos.push(
+        `${heredadas} clasificación(es) resueltas por evidencia: otra fila con el mismo texto/SKU ya estaba clasificada (relación heredada, sin adivinar).`,
+      );
+    }
+  }
+
   const esAnticipo = (r: Registro) =>
     r.categoria === 'ANTICIPOS' &&
     (r.documentoTipo === 'BV' || r.documentoTipo === 'FT') &&
