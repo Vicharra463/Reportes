@@ -4,9 +4,10 @@
 // renderizar (navegador); si no, la hoja se genera igual sin gráfico.
 
 import ExcelJS from 'exceljs';
-import type { CambioConfig, Facturacion, GrupoModeloColor, ReglaAprendizaje, Reserva, ResumenDashboard } from '../tipos';
+import type { CambioConfig, Facturacion, GrupoModelo, GrupoModeloColor, ReglaAprendizaje, Reserva, ResumenDashboard } from '../tipos';
 import type { Configuracion } from '../dominio/configuracion';
 import type { FilaStock } from '../dominio/calcular';
+import { normalizar } from '../dominio/normalizar';
 
 export interface DatosReporte {
   dashboard: ResumenDashboard;
@@ -57,9 +58,9 @@ export async function generarReporte(d: DatosReporte): Promise<ExcelJS.Workbook>
   wb.creator = 'Top Motors Reporte';
   wb.created = new Date(d.generadoISO);
 
-  // ---------------------------------------------------------------- Resumen
-  const rs = wb.addWorksheet('Resumen', { views: [{ state: 'frozen', ySplit: 4 }] });
-  titulo(rs, 'Top Motors — Resumen de cobranza y estimado', `Generado ${d.generadoISO} · moneda ${d.cfg.simboloMoneda}${d.cfg.moneda} · IGV ${d.cfg.igvPorcentaje}%`);
+  // -------------------------------------------------------------- Dashboard
+  const rs = wb.addWorksheet('Dashboard', { views: [{ state: 'frozen', ySplit: 4 }] });
+  titulo(rs, 'Top Motors — Dashboard completo', `Generado ${d.generadoISO} · moneda ${d.cfg.simboloMoneda}${d.cfg.moneda} · IGV ${d.cfg.igvPorcentaje}%`);
   const kpis: [string, string | number, string | undefined][] = [
     ['Valor neto de reservas', num(d.dashboard.valorNeto), MONEDA],
     ['Cobrado', num(d.dashboard.cobrado), MONEDA],
@@ -67,6 +68,7 @@ export async function generarReporte(d: DatosReporte): Promise<ExcelJS.Workbook>
     ['Exceso cobrado', num(d.dashboard.exceso), MONEDA],
     ['Avance de cobro', d.dashboard.avance, PORC],
     ['Reservas (pedidos)', d.dashboard.reservas, '0'],
+    ['Clientes en reserva', d.dashboard.resumenModelos.reduce((a, m) => a + m.clientes, 0), '0'],
     ['Motos reservadas', d.dashboard.motosReservadas, '0'],
     ['Cobradas 100%', d.dashboard.cobradas100, '0'],
     ['Motos facturadas', d.dashboard.facturadasMotos, '0'],
@@ -93,7 +95,45 @@ export async function generarReporte(d: DatosReporte): Promise<ExcelJS.Workbook>
     }
     r += 1;
   }
+
+  // --- Resumen por modelo (clientes distintos, motos, dinero) con fórmulas vivas
   r += 1;
+  rs.getCell(r, 1).value = 'Reservas por modelo';
+  rs.getCell(r, 1).font = { bold: true, size: 12 };
+  r += 1;
+  encabezado(rs, r, ['Modelo', 'Clientes', 'Reservas', 'Motos', 'Valor neto', 'Cobrado', 'Saldo', 'Avance', 'Facturadas']);
+  const filaEncG = r;
+  d.dashboard.resumenModelos.forEach((m: GrupoModelo, i) => {
+    const fila = filaEncG + 1 + i;
+    rs.getCell(fila, 1).value = m.modelo;
+    rs.getCell(fila, 2).value = m.clientes;
+    rs.getCell(fila, 3).value = m.reservas;
+    rs.getCell(fila, 4).value = m.motos;
+    rs.getCell(fila, 5).value = num(m.valorNeto);
+    rs.getCell(fila, 5).numFmt = MONEDA;
+    rs.getCell(fila, 6).value = num(m.cobrado);
+    rs.getCell(fila, 6).numFmt = MONEDA;
+    rs.getCell(fila, 7).value = num(m.saldo);
+    rs.getCell(fila, 7).numFmt = MONEDA;
+    rs.getCell(fila, 8).value = { formula: `IF(E${fila}=0,0,F${fila}/E${fila})`, result: m.avance } as ExcelJS.CellValue;
+    rs.getCell(fila, 8).numFmt = PORC;
+    rs.getCell(fila, 9).value = m.facturadas;
+  });
+  r = filaEncG + d.dashboard.resumenModelos.length + 1;
+  if (d.dashboard.resumenModelos.length) {
+    r += 1;
+    rs.getCell(r, 1).value = 'TOTAL';
+    rs.getCell(r, 1).font = { bold: true };
+    for (const col of [2, 3, 4, 5, 6, 7, 9]) {
+      const letra = rs.getColumn(col).letter;
+      rs.getCell(r, col).value = { formula: `SUM(${letra}${filaEncG + 1}:${letra}${r - 1})`, result: undefined } as ExcelJS.CellValue;
+      rs.getCell(r, col).font = { bold: true };
+      if (col >= 5 && col <= 7) rs.getCell(r, col).numFmt = MONEDA;
+    }
+  }
+
+  // --- Conciliación
+  r += 2;
   rs.getCell(r, 1).value = 'Controles de conciliación';
   rs.getCell(r, 1).font = { bold: true, size: 12 };
   r += 1;
@@ -117,8 +157,11 @@ export async function generarReporte(d: DatosReporte): Promise<ExcelJS.Workbook>
   rs.getColumn(2).width = 16;
   rs.getColumn(3).width = 16;
   rs.getColumn(4).width = 14;
-  rs.getColumn(5).width = 10;
+  rs.getColumn(5).width = 12;
   rs.getColumn(6).width = 80;
+  rs.getColumn(7).width = 14;
+  rs.getColumn(8).width = 10;
+  rs.getColumn(9).width = 12;
 
   // --------------------------------------------------------------- Reservas
   const rv = wb.addWorksheet('Reservas', { views: [{ state: 'frozen', ySplit: 3 }] });
@@ -173,10 +216,84 @@ export async function generarReporte(d: DatosReporte): Promise<ExcelJS.Workbook>
     rv.getColumn(i + 1).width = w;
   });
 
+  // ------------------------------------------- Reservas por estado (pivot)
+  // Modelo × Color × Estado (Reservada / Facturada / Pago parcial / Pagada 100%)
+  const re = wb.addWorksheet('Reservas_Estado', { views: [{ state: 'frozen', ySplit: 3 }] });
+  titulo(re, 'Reservas por estado', 'Cada fila cruza modelo + color + estado de la reserva (facturada, pagada 100%, pago parcial…)');
+  const colsRE = ['Modelo', 'Color', 'Estado', 'Reservas', 'Motos', 'Clientes', 'Valor neto', 'Cobrado', 'Saldo'];
+  encabezado(re, 3, colsRE);
+  interface FilaEstado {
+    modelo: string;
+    color: string;
+    estado: string;
+    reservas: number;
+    motos: number;
+    valorNeto: number;
+    cobrado: number;
+    saldo: number;
+    clientes: Set<string>;
+  }
+  const porEstado = new Map<string, FilaEstado>();
+  for (const res of d.reservas) {
+    const modelo = res.modelo ?? '(sin modelo)';
+    const color = res.color ?? '(sin color)';
+    const estado = res.estado || '(sin estado)';
+    const k = `${modelo}||${color}||${estado}`;
+    let f = porEstado.get(k);
+    if (!f) {
+      f = { modelo, color, estado, reservas: 0, motos: 0, valorNeto: 0, cobrado: 0, saldo: 0, clientes: new Set() };
+      porEstado.set(k, f);
+    }
+    f.reservas += 1;
+    f.motos += res.motos;
+    f.valorNeto += num(res.valorNeto);
+    f.cobrado += num(res.cobrado);
+    f.saldo += num(res.saldo);
+    if (res.cliente && normalizar(res.cliente)) f.clientes.add(normalizar(res.cliente));
+  }
+  const filasEstado = [...porEstado.values()].sort(
+    (a, b) => a.modelo.localeCompare(b.modelo) || a.color.localeCompare(b.color) || a.estado.localeCompare(b.estado),
+  );
+  filasEstado.forEach((f, i) => {
+    const fila = 4 + i;
+    re.getCell(fila, 1).value = f.modelo;
+    re.getCell(fila, 2).value = f.color;
+    const est = re.getCell(fila, 3);
+    est.value = f.estado;
+    if (/facturada/i.test(f.estado)) est.font = { bold: true, color: { argb: 'FF1E8E3E' } };
+    else if (/100/i.test(f.estado)) est.font = { color: { argb: 'FF7C5CFF' } };
+    else if (/parcial/i.test(f.estado)) est.font = { color: { argb: 'FFE0A800' } };
+    re.getCell(fila, 4).value = f.reservas;
+    re.getCell(fila, 5).value = f.motos;
+    re.getCell(fila, 6).value = f.clientes.size;
+    re.getCell(fila, 7).value = f.valorNeto;
+    re.getCell(fila, 7).numFmt = MONEDA;
+    re.getCell(fila, 8).value = f.cobrado;
+    re.getCell(fila, 8).numFmt = MONEDA;
+    re.getCell(fila, 9).value = f.saldo;
+    re.getCell(fila, 9).numFmt = MONEDA;
+  });
+  if (filasEstado.length) {
+    const ultE = 3 + filasEstado.length;
+    const totE = ultE + 1;
+    re.getCell(totE, 1).value = 'TOTAL';
+    re.getCell(totE, 1).font = { bold: true };
+    for (const col of [4, 5, 7, 8, 9]) {
+      const letra = re.getColumn(col).letter;
+      re.getCell(totE, col).value = { formula: `SUM(${letra}4:${letra}${ultE})`, result: undefined } as ExcelJS.CellValue;
+      re.getCell(totE, col).font = { bold: true };
+      if (col >= 7) re.getCell(totE, col).numFmt = MONEDA;
+    }
+    re.autoFilter = { from: { row: 3, column: 1 }, to: { row: ultE, column: colsRE.length } };
+  }
+  [24, 14, 16, 10, 8, 10, 14, 14, 14].forEach((w, i) => {
+    re.getColumn(i + 1).width = w;
+  });
+
   // -------------------------------------------------------- Modelo · Color
   const gm = wb.addWorksheet('Modelo_Color', { views: [{ state: 'frozen', ySplit: 3 }] });
   titulo(gm, 'Detalle por modelo y color');
-  const colsG = ['Modelo', 'Color', 'Reservas', 'Motos', 'Valor neto', 'Cobrado', 'Saldo', 'Exceso', 'Avance', 'Facturadas'];
+  const colsG = ['Modelo', 'Color', 'Reservas', 'Motos', 'Valor neto', 'Cobrado', 'Saldo', 'Exceso', 'Avance', 'Facturadas', 'Clientes'];
   encabezado(gm, 3, colsG);
   d.dashboard.porModelo.forEach((g: GrupoModeloColor, i) => {
     const fila = 4 + i;
@@ -195,6 +312,7 @@ export async function generarReporte(d: DatosReporte): Promise<ExcelJS.Workbook>
     gm.getCell(fila, 9).value = { formula: `IF(E${fila}=0,0,F${fila}/E${fila})`, result: g.avance } as ExcelJS.CellValue;
     gm.getCell(fila, 9).numFmt = PORC;
     gm.getCell(fila, 10).value = g.facturadas;
+    gm.getCell(fila, 11).value = g.clientes;
   });
   if (d.dashboard.porModelo.length) {
     const ultG = 3 + d.dashboard.porModelo.length;
@@ -204,7 +322,7 @@ export async function generarReporte(d: DatosReporte): Promise<ExcelJS.Workbook>
     });
     gm.autoFilter = { from: { row: 3, column: 1 }, to: { row: ultG, column: colsG.length } };
   }
-  [24, 14, 10, 8, 14, 14, 14, 12, 10, 12].forEach((w, i) => {
+  [24, 14, 10, 8, 14, 14, 14, 12, 10, 12, 10].forEach((w, i) => {
     gm.getColumn(i + 1).width = w;
   });
 
@@ -241,7 +359,7 @@ export async function generarReporte(d: DatosReporte): Promise<ExcelJS.Workbook>
   // ----------------------------------------------------------------- Stock
   const st = wb.addWorksheet('Stock', { views: [{ state: 'frozen', ySplit: 3 }] });
   titulo(st, 'Stock proyectado y estimado neto', `Fórmula: ${d.cfg.formulaStock}`);
-  const colsS = ['Modelo', 'Color', 'Inicial', 'Facturadas', 'Reservas', 'Saldo proyectado', 'Precio lista', 'Fuente precio', 'Estimado neto'];
+  const colsS = ['Modelo', 'Color', 'Inicial', 'Facturadas', 'Reservas', 'Saldo proyectado', 'Precio lista', 'Fuente precio', 'Estimado neto', 'Fuente facturadas'];
   encabezado(st, 3, colsS);
   d.stockFilas.forEach((f, i) => {
     const fila = 4 + i;
@@ -256,6 +374,7 @@ export async function generarReporte(d: DatosReporte): Promise<ExcelJS.Workbook>
     st.getCell(fila, 8).value = f.precioFuente ?? '';
     st.getCell(fila, 9).value = { formula: `IF(OR(F${fila}<=0,G${fila}="sin precio"),0,F${fila}*G${fila})`, result: num(f.estimadoNeto) } as ExcelJS.CellValue;
     st.getCell(fila, 9).numFmt = MONEDA;
+    st.getCell(fila, 10).value = f.facturadasManual !== null ? `manual (Excel: ${f.facturadasCalculadas})` : 'Excel';
   });
   if (d.stockFilas.length) {
     const ultS = 3 + d.stockFilas.length;
@@ -269,7 +388,7 @@ export async function generarReporte(d: DatosReporte): Promise<ExcelJS.Workbook>
     }
     st.autoFilter = { from: { row: 3, column: 1 }, to: { row: ultS, column: colsS.length } };
   }
-  [24, 14, 10, 12, 10, 16, 14, 28, 16].forEach((w, i) => {
+  [24, 14, 10, 12, 10, 16, 14, 28, 16, 24].forEach((w, i) => {
     st.getColumn(i + 1).width = w;
   });
 
