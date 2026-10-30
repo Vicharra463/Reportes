@@ -95,7 +95,7 @@ export default function CargaDatos({ arrancarEnPaso, onCargado }: { arrancarEnPa
   return (
     <div>
       <h2>Cargar Excel</h2>
-      <ol className="fila" style={{ listStyle: 'none', padding: 0, gap: 18, marginBottom: 16 }}>
+      <ol className="pasos">
         {['Elegir archivos', 'Revisar detección', 'Previsualizar', 'Confirmar'].map((t, i) => (
           <li key={t}>
             <button className={pasoActual === i + 1 ? 'activo' : ''} onClick={() => setPaso(i + 1)}>

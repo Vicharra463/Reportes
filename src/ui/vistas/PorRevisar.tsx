@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../uso';
+import { Cargando } from '../componentes';
 import type { Registro } from '../../tipos';
 
 function celdaClave(r: Registro): string {
@@ -70,7 +71,7 @@ export default function PorRevisar() {
   const [busqueda, setBusqueda] = useState('');
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
 
-  if (!modelo) return <div className="panel">Calculando…</div>;
+  if (!modelo) return <Cargando texto="Calculando el modelo…" />;
 
   const filtrar = (rs: Registro[]) => {
     if (!busqueda.trim()) return rs;

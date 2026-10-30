@@ -24,6 +24,7 @@ import { prepararArchivo } from '../io/leerExcel';
 import { descargarReporte, type DatosReporte } from '../io/reporte';
 import { armarBackup, backupAJson, descargarJson, nombreBackupFecha, parsearBackup } from '../io/backup';
 import * as db from '../db/almacen';
+import * as alertas from './alertas';
 
 export interface CorreccionInput {
   registro: Registro;
@@ -52,7 +53,8 @@ export interface AppApi {
   confirmarCola: (sim: SimulacionConArchivos) => Promise<number>;
   // operaciones
   aplicarCorreccion: (c: CorreccionInput) => Promise<void>;
-  guardarStockManual: (modelo: string, color: string, inicial: string) => Promise<void>;
+  /** Guarda stock inicial y, opcionalmente, un override manual de facturadas (null = volver al cálculo del Excel). */
+  guardarStockManual: (modelo: string, color: string, inicial: string, facturadasManual?: string | null) => Promise<void>;
   editarCfg: (seccion: string, mutar: (cfg: Configuracion) => void) => Promise<void>;
   revertirCambio: (cambio: CambioConfig) => Promise<void>;
   toggleRegla: (rg: ReglaAprendizaje, activa: boolean) => Promise<void>;
@@ -159,6 +161,7 @@ export function useProveedor(): AppApi {
     if (!cola.length) return null;
     setCalculando(true);
     setError(null);
+    alertas.cargando('Previsualizando la importación…', 'Se calcula todo sin guardar nada.');
     try {
       const sim = await simularImportacion({
         cola,
@@ -170,9 +173,12 @@ export function useProveedor(): AppApi {
       });
       return sim;
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const msg = alertas.mensajeError(e);
+      setError(msg);
+      alertas.fallo('No se pudo previsualizar', msg);
       return null;
     } finally {
+      alertas.cerrarCargando();
       setCalculando(false);
     }
   }, [cola, lotes]);
@@ -197,6 +203,7 @@ export function useProveedor(): AppApi {
     async (sim: SimulacionConArchivos): Promise<number> => {
       setCalculando(true);
       setError(null);
+      alertas.cargando('Importando los archivos…', 'Escribiendo en la base local.');
       try {
         const ahoraISO = new Date().toISOString();
         const res = await confirmarImportacion({
@@ -211,11 +218,15 @@ export function useProveedor(): AppApi {
         });
         setCola([]);
         await recargarTodo();
+        alertas.exito('Importación confirmada', `${res.registrosGuardados} registros guardados. Todo recalculado.`);
         return res.registrosGuardados;
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        const msg = alertas.mensajeError(e);
+        setError(msg);
+        alertas.fallo('La importación falló', msg);
         return 0;
       } finally {
+        alertas.cerrarCargando();
         setCalculando(false);
       }
     },
@@ -240,23 +251,28 @@ export function useProveedor(): AppApi {
       });
       await db.agregarRegla(rg);
       await recargarTodo();
+      alertas.toast(`Corrección aprendida: ${c.tipo} → ${c.valor}`);
     },
     [recargarTodo],
   );
 
   const guardarStockManual = useCallback(
-    async (modeloN: string, colorN: string, inicial: string) => {
-      await db.upsertStock({
+    async (modeloN: string, colorN: string, inicial: string, facturadasManual?: string | null) => {
+      const fila: import('../tipos').StockFila = {
         modelo: canonicoModelo(cfgRef.current, modeloN),
         color: canonicoColor(cfgRef.current, colorN || 'Sin color'),
         inicial,
         fechaISO: new Date().toISOString(),
         origen: 'manual',
-      });
+      };
+      // undefined = no cambiar el override vigente; null = volver al cálculo del Excel
+      if (facturadasManual !== undefined) fila.facturadasManual = facturadasManual;
+      await db.upsertStock(fila);
       const sts = await db.cargarStock();
       setStock(sts);
       stockRef.current = sts;
       await recalcular();
+      alertas.toast('Stock guardado y recalculado');
     },
     [recalcular],
   );
@@ -282,12 +298,19 @@ export function useProveedor(): AppApi {
       setCambios([...cms].sort((a, b) => (b.fechaISO > a.fechaISO ? 1 : -1)));
       stockRef.current = stockRef.current;
       await recalcular();
+      alertas.toast('Configuración guardada y recalculado');
     },
     [recalcular],
   );
 
   const revertirCambio = useCallback(
     async (cambio: CambioConfig) => {
+      const ok = await alertas.confirmar({
+        titulo: '¿Deshacer este cambio?',
+        texto: `Se restaura el valor anterior de "${cambio.clave}" (${cambio.seccion}).`,
+        confirmarTexto: 'Sí, deshacer',
+      });
+      if (!ok) return;
       try {
         const obj = JSON.parse(cambio.antes) as Configuracion;
         setCfg(obj);
@@ -296,8 +319,10 @@ export function useProveedor(): AppApi {
         const cms = await db.cargarCambios();
         setCambios([...cms].sort((a, b) => (b.fechaISO > a.fechaISO ? 1 : -1)));
         await recalcular();
+        alertas.toast('Cambio deshecho');
       } catch {
         setError('No se pudo revertir el cambio.');
+        alertas.fallo('No se pudo revertir', 'El cambio guardado no es válido para restaurar.');
       }
     },
     [recalcular],
@@ -310,17 +335,26 @@ export function useProveedor(): AppApi {
       setReglas(rgs);
       reglasRef.current = rgs;
       await recalcular();
+      alertas.toast(activa ? 'Regla activada' : 'Regla desactivada', 'info');
     },
     [recalcular],
   );
 
   const eliminarRegla = useCallback(
     async (id: number) => {
+      const ok = await alertas.confirmar({
+        titulo: '¿Eliminar la regla?',
+        texto: 'La clasificación aprendida se borra y puede volver a fallar en cargas futuras.',
+        confirmarTexto: 'Sí, eliminar',
+        peligro: true,
+      });
+      if (!ok) return;
       await db.eliminarRegla(id);
       const rgs = await db.cargarReglas();
       setReglas(rgs);
       reglasRef.current = rgs;
       await recalcular();
+      alertas.toast('Regla eliminada');
     },
     [recalcular],
   );
@@ -329,26 +363,49 @@ export function useProveedor(): AppApi {
     async (loteId: number) => {
       const l = lotes.find((x) => x.id === loteId);
       if (!l) return;
-      await db.actualizarLote({ ...l, estado: 'revertido' });
-      await db.revertirLote(loteId);
-      await recargarTodo();
+      const ok = await alertas.confirmar({
+        titulo: `¿Revertir el lote "${l.archivo}"?`,
+        texto: `Se borran sus ${l.filasImportadas} filas de la base y todo se recalcula. Esta acción queda registrada en el historial.`,
+        confirmarTexto: 'Sí, revertir',
+        peligro: true,
+      });
+      if (!ok) return;
+      alertas.cargando('Revirtiendo el lote…');
+      try {
+        await db.actualizarLote({ ...l, estado: 'revertido' });
+        await db.revertirLote(loteId);
+        await recargarTodo();
+        alertas.exito('Lote revertido', `${l.filasImportadas} filas eliminadas.`);
+      } catch (e) {
+        alertas.fallo('No se pudo revertir', alertas.mensajeError(e));
+      } finally {
+        alertas.cerrarCargando();
+      }
     },
     [lotes, recargarTodo],
   );
 
   const generarReporteExcel = useCallback(async () => {
     if (!modelo) return;
-    const datos: DatosReporte = {
-      dashboard: modelo.dashboard,
-      reservas: modelo.reservas,
-      facturaciones: modelo.facturaciones,
-      stockFilas: modelo.stockFilas,
-      cambios,
-      reglas,
-      cfg: cfgRef.current,
-      generadoISO: new Date().toISOString(),
-    };
-    await descargarReporte(datos);
+    alertas.cargando('Generando el reporte Excel…', 'Armando hojas, fórmulas y gráfico.');
+    try {
+      const datos: DatosReporte = {
+        dashboard: modelo.dashboard,
+        reservas: modelo.reservas,
+        facturaciones: modelo.facturaciones,
+        stockFilas: modelo.stockFilas,
+        cambios,
+        reglas,
+        cfg: cfgRef.current,
+        generadoISO: new Date().toISOString(),
+      };
+      await descargarReporte(datos);
+      alertas.toast('Reporte Excel descargado');
+    } catch (e) {
+      alertas.fallo('No se pudo generar el reporte', alertas.mensajeError(e));
+    } finally {
+      alertas.cerrarCargando();
+    }
   }, [modelo, cambios, reglas]);
 
   const exportarBackup = useCallback(() => {
@@ -362,10 +419,12 @@ export function useProveedor(): AppApi {
       ahoraISO: new Date().toISOString(),
     });
     descargarJson(nombreBackupFecha(b.generadoISO), backupAJson(b));
+    alertas.toast('Backup JSON descargado');
   }, [lotes, reglas, cambios, stock]);
 
   const importarBackup = useCallback(
     async (file: File): Promise<number> => {
+      alertas.cargando('Importando el backup…', file.name);
       try {
         const txt = await file.text();
         const b = parsearBackup(txt);
@@ -377,10 +436,15 @@ export function useProveedor(): AppApi {
         setCfg(b.config);
         guardarConfig(b.config);
         await recargarTodo();
+        alertas.exito('Backup importado', `${b.registros.length} registros restaurados.`);
         return b.registros.length;
       } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
+        const msg = alertas.mensajeError(e);
+        setError(msg);
+        alertas.fallo('El backup no es válido', msg);
         return 0;
+      } finally {
+        alertas.cerrarCargando();
       }
     },
     [recargarTodo],

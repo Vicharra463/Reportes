@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '../uso';
 import { numPlain, usd } from '../formato';
+import { Cargando } from '../componentes';
 
 export default function Stock() {
   const { modelo, stock, guardarStockManual, cfg } = useApp();
@@ -9,7 +10,7 @@ export default function Stock() {
   const [i, setI] = useState('');
   const [guardando, setGuardando] = useState(false);
 
-  if (!modelo) return <div className="panel">Calculando…</div>;
+  if (!modelo) return <Cargando texto="Calculando el modelo…" />;
   const filas = modelo.stockFilas;
 
   const guardar = async () => {
@@ -97,7 +98,16 @@ export default function Stock() {
                     <td>{f.modelo}</td>
                     <td>{f.color}</td>
                     <td className="num">{f.inicial}</td>
-                    <td className="num">{f.facturadas}</td>
+                    <td className="num">
+                      {f.facturadas}
+                      {f.facturadasManual !== null ? (
+                        <span className="badge warn" title={`Manual (el Excel calcula ${f.facturadasCalculadas}). Se edita desde el Dashboard.`}>
+                          manual
+                        </span>
+                      ) : (
+                        <span className="badge info" title="Calculado desde el Excel de ventas">auto</span>
+                      )}
+                    </td>
                     <td className="num">{f.reservas}</td>
                     <td className="num">
                       {f.saldo === null ? (

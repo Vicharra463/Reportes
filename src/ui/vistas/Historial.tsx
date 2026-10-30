@@ -1,11 +1,10 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { useApp } from '../uso';
 import { fechaCorta } from '../formato';
 
 export default function Historial() {
   const { cambios, lotes, revertirCambio, revertirLote, exportarBackup, importarBackup } = useApp();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [msg, setMsg] = useState<string | null>(null);
 
   return (
     <div>
@@ -95,14 +94,7 @@ export default function Historial() {
                   </td>
                   <td>
                     {l.estado === 'confirmado' && l.id !== undefined && (
-                      <button
-                        className="peligro chico"
-                        onClick={() => {
-                          if (confirm(`¿Revertir el lote "${l.archivo}"? Se borran sus ${l.filasImportadas} filas.`)) {
-                            void revertirLote(l.id!);
-                          }
-                        }}
-                      >
+                      <button className="peligro chico" onClick={() => void revertirLote(l.id!)}>
                         Revertir
                       </button>
                     )}
@@ -127,12 +119,11 @@ export default function Historial() {
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (!f) return;
-              void importarBackup(f).then((n) => setMsg(n > 0 ? `Backup importado: ${n} registros.` : null));
+              void importarBackup(f);
               e.target.value = '';
             }}
           />
         </div>
-        {msg && <div className="banner ok">{msg}</div>}
         <p className="mini">
           El backup incluye lotes, registros, reglas, historial, stock y configuración. El archivo Excel original no se
           guarda nunca: si lo perdés, volvé a cargarlo desde el backup (los datos parseados siguen siendo válidos).
