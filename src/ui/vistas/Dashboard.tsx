@@ -104,19 +104,16 @@ export default function Dashboard({ onIrACarga }: { onIrACarga: () => void }) {
         </div>
       </div>
 
-      {modelo.avisos.length > 0 && (
-        <div className="panel">
-          <h3>Avisos del cálculo</h3>
-          <ul style={{ margin: 0, paddingLeft: 18 }}>
-            {modelo.avisos.slice(0, 30).map((a, i) => (
-              <li key={i} style={{ marginBottom: 4 }}>
-                {a}
-              </li>
-            ))}
-          </ul>
-          {modelo.avisos.length > 30 && <div className="difuso">…y {modelo.avisos.length - 30} avisos más.</div>}
-        </div>
-      )}
+      {modelo.avisos.slice(0, 30).map((a, i) => (
+  <li key={i} style={{ marginBottom: 4 }}>
+    {a.length > 200 ? (
+      <details>
+        <summary>{a.slice(0, 160)}… <span className="difuso">(ver completo)</span></summary>
+        <div style={{ maxHeight: 200, overflow: 'auto', marginTop: 6 }}>{a}</div>
+      </details>
+    ) : a}
+  </li>
+))}
 
       <div className="panel">
         <h3>Detalle por modelo y color</h3>
