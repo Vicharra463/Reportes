@@ -157,6 +157,55 @@ describe('stock', () => {
   it('la fórmula es evaluable y configurable', () => {
     expect(evaluarFormula('inicial - facturadas', { inicial: 5, facturadas: 2, reservas: 1 })).toBe(3);
   });
+
+  it('facturadasManual reemplaza el conteo del Excel en el saldo proyectado', () => {
+    const f = mkReg({
+      categoria: 'VEHICULOS',
+      documento: 'BV-30',
+      documentoTipo: 'FT',
+      importeUsd: '2690.00',
+      descripcion: 'CB190R AZUL',
+    });
+    const stock = [
+      {
+        modelo: 'CB190R 2.0',
+        color: 'Azul',
+        inicial: '10',
+        facturadasManual: '3',
+        fechaISO: '2026-10-01',
+        origen: 'manual' as const,
+      },
+    ];
+    const res = corrida([f], stock);
+    const fila = res.stockFilas.find((x) => x.modelo === 'CB190R 2.0' && normalizar(x.color) === 'azul');
+    expect(fila).toBeDefined();
+    expect(fila!.facturadasCalculadas).toBe(1);
+    expect(fila!.facturadasManual).toBe(3);
+    expect(fila!.facturadas).toBe(3);
+    expect(fila!.saldo).toBe(7); // 10 − 3(manual) − 0
+    expect(res.avisos.some((a) => a.includes('Facturadas manuales'))).toBe(true);
+  });
+});
+
+describe('resumen por modelo', () => {
+  it('cuenta clientes distintos (normalizados) con reserva por modelo', () => {
+    const p1 = pedidoBase(20, 'CB190R-AZU_CB', 'CB190R AZUL');
+    const p2 = pedidoBase(21, 'CB190R-AZU_CB', 'CB190R AZUL');
+    const p3 = pedidoBase(22, 'CB190R-AZU_CB', 'CB190R AZUL');
+    const a1 = anticipo(20, '100.00', 1);
+    a1.cliente = 'Juan Pérez';
+    const a2 = anticipo(21, '100.00', 2);
+    a2.cliente = 'JUAN PEREZ'; // misma persona: distinto case/tildes
+    const a3 = anticipo(22, '100.00', 3);
+    a3.cliente = 'Ana Gómez';
+    const res = corrida([p1, p2, p3, a1, a2, a3]);
+    const m = res.dashboard.resumenModelos.find((x) => x.modelo === 'CB190R 2.0');
+    expect(m).toBeDefined();
+    expect(m!.reservas).toBe(3);
+    expect(m!.clientes).toBe(2);
+    const g = res.dashboard.porModelo.find((x) => x.modelo === 'CB190R 2.0');
+    expect(g!.clientes).toBe(2);
+  });
 });
 
 describe('claveRegistro', () => {

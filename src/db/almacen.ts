@@ -57,6 +57,7 @@ function clampRegla(rg: ReglaAprendizaje): ReglaAprendizaje {
 }
 
 function clampStock(sf: StockFila): StockFila {
+  // No tocar facturadasManual: si la clave no viene, el upsert conserva el valor vigente.
   return { ...sf, id: sf.id ?? seqId++ };
 }
 

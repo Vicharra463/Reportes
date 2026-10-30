@@ -193,6 +193,22 @@ export interface Facturacion {
 export interface GrupoModeloColor {
   modelo: string;
   color: string;
+  /** Clientes distintos con reserva activa en este modelo+color. */
+  clientes: number;
+  reservas: number;
+  motos: number;
+  valorNeto: string;
+  cobrado: string;
+  saldo: string;
+  exceso: string;
+  avance: number; // 0..1
+  facturadas: number;
+}
+
+/** Resumen agregado por modelo (colapsa colores): clientes distintos con reserva. */
+export interface GrupoModelo {
+  modelo: string;
+  clientes: number;
   reservas: number;
   motos: number;
   valorNeto: string;
@@ -234,6 +250,8 @@ export interface ResumenDashboard {
   estimadoParcialCobrado: string;
   estimadoSaldoPorCobrar: string;
   porModelo: GrupoModeloColor[];
+  /** Reservas agregadas por modelo (sin color), con clientes distintos. */
+  resumenModelos: GrupoModelo[];
   conciliacion: ControlConciliacion[];
   valido: boolean;
 }
@@ -269,6 +287,8 @@ export interface StockFila {
   modelo: string;
   color: string;
   inicial: string;
+  /** Override manual del conteo de facturadas; null/ausente = valor calculado del Excel. */
+  facturadasManual?: string | null;
   fechaISO: string;
   origen: 'manual' | 'excel' | 'derivado';
   loteId?: number;

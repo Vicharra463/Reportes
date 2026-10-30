@@ -6,6 +6,7 @@ import Decimal from 'decimal.js';
 import type {
   ControlConciliacion,
   Facturacion,
+  GrupoModelo,
   GrupoModeloColor,
   Registro,
   ReglaAprendizaje,
@@ -15,7 +16,7 @@ import type {
 } from '../tipos';
 import type { Configuracion } from './configuracion';
 import { clasificarColor, clasificarModelo, type TextoFuente } from './clasificar';
-import { compactar } from './normalizar';
+import { compactar, normalizar } from './normalizar';
 import { aplicarAnulaciones, claveRegistro, validarFila } from './validar';
 
 const P_CALC = 'cálculo: ';
@@ -32,7 +33,12 @@ export interface FilaStock {
   modelo: string;
   color: string;
   inicial: number;
+  /** Facturadas efectivas: el override manual si existe, si no el conteo del Excel. */
   facturadas: number;
+  /** Conteo derivado del Excel de ventas (sin overrides). */
+  facturadasCalculadas: number;
+  /** Override manual cargado por el usuario; null = sin override. */
+  facturadasManual: number | null;
   reservas: number;
   saldo: number | null;
   precio: string | null;
@@ -557,11 +563,14 @@ export function calcular(ctx: ContextoCalculo): ModeloCalculado {
   // 8) grupos por modelo + color
   const gruposMap = new Map<string, GrupoModeloColor>();
   const claveG = (m: string, c: string) => `${m}||${c}`;
+  /** Clientes distintos (clave normalizada) por grupo y por modelo. */
+  const clientesGrupo = new Map<string, Set<string>>();
+  const clientesModelo = new Map<string, Set<string>>();
   const asegurar = (m: string, c: string): GrupoModeloColor => {
     const k = claveG(m, c);
     let g = gruposMap.get(k);
     if (!g) {
-      g = { modelo: m, color: c, reservas: 0, motos: 0, valorNeto: '0', cobrado: '0', saldo: '0', exceso: '0', avance: 0, facturadas: 0 };
+      g = { modelo: m, color: c, clientes: 0, reservas: 0, motos: 0, valorNeto: '0', cobrado: '0', saldo: '0', exceso: '0', avance: 0, facturadas: 0 };
       gruposMap.set(k, g);
     }
     return g;
@@ -574,16 +583,65 @@ export function calcular(ctx: ContextoCalculo): ModeloCalculado {
     g.cobrado = money(dec(g.cobrado).plus(dec(r.cobrado)), cfg);
     g.saldo = money(dec(g.saldo).plus(dec(r.saldo)), cfg);
     g.exceso = money(dec(g.exceso).plus(dec(r.exceso)), cfg);
+    if (r.cliente && normalizar(r.cliente)) {
+      const kG = claveG(g.modelo, g.color);
+      const setG = clientesGrupo.get(kG) ?? new Set<string>();
+      setG.add(normalizar(r.cliente));
+      clientesGrupo.set(kG, setG);
+      const setM = clientesModelo.get(g.modelo) ?? new Set<string>();
+      setM.add(normalizar(r.cliente));
+      clientesModelo.set(g.modelo, setM);
+    }
   }
   for (const f of facturaciones) {
     const g = asegurar(f.modelo ?? '(sin modelo)', f.color ?? '(sin color)');
     g.facturadas += 1;
   }
   for (const g of gruposMap.values()) {
+    g.clientes = clientesGrupo.get(claveG(g.modelo, g.color))?.size ?? 0;
     const v = dec(g.valorNeto);
     g.avance = v.isZero() ? 0 : dec(g.cobrado).div(v).toNumber();
   }
   const porModelo = [...gruposMap.values()].sort((a, b) => dec(b.valorNeto).minus(dec(a.valorNeto)).toNumber());
+
+  // 8b) resumen por modelo (sin color): clientes distintos con reserva activa
+  const factPorModelo = new Map<string, number>();
+  for (const f of facturaciones) {
+    const m = f.modelo ?? '(sin modelo)';
+    factPorModelo.set(m, (factPorModelo.get(m) ?? 0) + 1);
+  }
+  const modelosMap = new Map<string, GrupoModelo>();
+  for (const g of porModelo) {
+    let m = modelosMap.get(g.modelo);
+    if (!m) {
+      m = {
+        modelo: g.modelo,
+        clientes: 0,
+        reservas: 0,
+        motos: 0,
+        valorNeto: '0',
+        cobrado: '0',
+        saldo: '0',
+        exceso: '0',
+        avance: 0,
+        facturadas: 0,
+      };
+      modelosMap.set(g.modelo, m);
+    }
+    m.reservas += g.reservas;
+    m.motos += g.motos;
+    m.valorNeto = money(dec(m.valorNeto).plus(dec(g.valorNeto)), cfg);
+    m.cobrado = money(dec(m.cobrado).plus(dec(g.cobrado)), cfg);
+    m.saldo = money(dec(m.saldo).plus(dec(g.saldo)), cfg);
+    m.exceso = money(dec(m.exceso).plus(dec(g.exceso)), cfg);
+  }
+  for (const m of modelosMap.values()) {
+    m.clientes = clientesModelo.get(m.modelo)?.size ?? 0;
+    m.facturadas = factPorModelo.get(m.modelo) ?? 0;
+    const v = dec(m.valorNeto);
+    m.avance = v.isZero() ? 0 : dec(m.cobrado).div(v).toNumber();
+  }
+  const resumenModelos = [...modelosMap.values()].sort((a, b) => dec(b.valorNeto).minus(dec(a.valorNeto)).toNumber());
 
   // 9) stock + estimado
   const preciosPorModelo = construirPreciosPorModelo(cfg);
@@ -598,6 +656,8 @@ export function calcular(ctx: ContextoCalculo): ModeloCalculado {
         color,
         inicial: 0,
         facturadas: 0,
+        facturadasCalculadas: 0,
+        facturadasManual: null,
         reservas: 0,
         saldo: null,
         precio: precio ? money(precio.precio, cfg) : null,
@@ -611,11 +671,23 @@ export function calcular(ctx: ContextoCalculo): ModeloCalculado {
   for (const s of stock) {
     const f = asegurarStock(s.modelo, s.color);
     f.inicial += Number(s.inicial) || 0;
+    if (s.facturadasManual !== null && s.facturadasManual !== undefined && s.facturadasManual !== '') {
+      const n = Number(s.facturadasManual);
+      if (Number.isFinite(n) && n >= 0) f.facturadasManual = n;
+    }
   }
   for (const g of gruposMap.values()) {
     const f = asegurarStock(g.modelo, g.color);
-    f.facturadas = g.facturadas;
+    f.facturadasCalculadas = g.facturadas;
     f.reservas = g.motos;
+  }
+  for (const f of stockMap.values()) {
+    f.facturadas = f.facturadasManual ?? f.facturadasCalculadas;
+    if (f.facturadasManual !== null && f.facturadasManual !== f.facturadasCalculadas) {
+      avisos.push(
+        `Facturadas manuales en ${f.modelo} / ${f.color}: se usó ${f.facturadasManual} (el Excel calcula ${f.facturadasCalculadas}).`,
+      );
+    }
   }
   let stockInicial = 0;
   let stockFacturadas = 0;
@@ -769,6 +841,7 @@ export function calcular(ctx: ContextoCalculo): ModeloCalculado {
     estimadoParcialCobrado: money(totalCob, cfg),
     estimadoSaldoPorCobrar: money(totalSaldo, cfg),
     porModelo,
+    resumenModelos,
     conciliacion: controles,
     valido,
   };
