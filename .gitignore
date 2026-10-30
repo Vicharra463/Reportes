@@ -1,0 +1,15 @@
+# Dependencias
+node_modules/
+
+# Build de Vite (el bundle autocontenido sí se commitea: dist/index.html)
+.vite/
+
+# Logs y SO
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Cobertura y temporales
+coverage/
+*.tmp
