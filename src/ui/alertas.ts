@@ -16,8 +16,14 @@ const TEMA = {
   },
 };
 
+// SweetAlert2 usa UNA sola instancia: si un finally llama a cerrarCargando()
+// mientras se abre el modal de error, se cierra el error y "no pasa nada".
+// Con este flag solo se cierra el modal de carga, nunca otro.
+let cargandoAbierto = false;
+
 /** Loading modal bloqueante para operaciones largas. Siempre cerrar con cerrarCargando(). */
 export function cargando(titulo: string, texto?: string): void {
+  cargandoAbierto = true;
   void Swal.fire({
     ...TEMA,
     title: titulo,
@@ -25,23 +31,41 @@ export function cargando(titulo: string, texto?: string): void {
     allowEscapeKey: false,
     allowOutsideClick: false,
     showConfirmButton: false,
-    didOpen: () => Swal.showLoading(),
+    customClass: {
+      ...TEMA.customClass,
+      popup: 'swal-tema swal-cargando',
+    },
+    didOpen: () => {
+      cargandoAbierto = true;
+      Swal.showLoading();
+    },
   });
 }
 
 export function cerrarCargando(): void {
+  if (!cargandoAbierto) return;
+  cargandoAbierto = false;
+  if (Swal.isVisible()) Swal.close();
+}
+
+function cerrarCargandoSilencioso(): void {
+  cargandoAbierto = false;
   if (Swal.isVisible()) Swal.close();
 }
 
 export function exito(titulo: string, texto?: string): void {
+  cerrarCargandoSilencioso();
   void Swal.fire({ ...TEMA, icon: 'success', title: titulo, text: texto, confirmButtonText: 'Entendido' });
 }
 
 export function fallo(titulo: string, texto?: string): void {
+  console.error('[TopMotors]', titulo, texto);
+  cerrarCargandoSilencioso();
   void Swal.fire({ ...TEMA, icon: 'error', title: titulo, text: texto, confirmButtonText: 'Cerrar' });
 }
 
 export function aviso(titulo: string, texto?: string): void {
+  cerrarCargandoSilencioso();
   void Swal.fire({ ...TEMA, icon: 'warning', title: titulo, text: texto, confirmButtonText: 'Entendido' });
 }
 

@@ -29,6 +29,7 @@ export interface SerieBarras {
 
 export function GraficoBarras(props: {
   titulo: string;
+  explicacion?: string;
   etiquetas: string[];
   series: SerieBarras[];
   apilado?: boolean;
@@ -38,7 +39,8 @@ export function GraficoBarras(props: {
   return (
     <div className="panel grafico-panel">
       <h3>{props.titulo}</h3>
-      <div style={{ height: props.alto ?? 260 }}>
+      {props.explicacion && <p className="explicacion">{props.explicacion}</p>}
+      <div style={{ height: props.alto ?? 280 }}>
         <Bar
           data={{
             labels: props.etiquetas,
@@ -80,6 +82,7 @@ export function GraficoBarras(props: {
 
 export function GraficoAnillo(props: {
   titulo: string;
+  explicacion?: string;
   etiquetas: string[];
   datos: number[];
   moneda?: boolean;
@@ -90,7 +93,8 @@ export function GraficoAnillo(props: {
   return (
     <div className="panel grafico-panel">
       <h3>{props.titulo}</h3>
-      <div style={{ height: props.alto ?? 260, position: 'relative' }}>
+      {props.explicacion && <p className="explicacion">{props.explicacion}</p>}
+      <div style={{ height: props.alto ?? 280, position: 'relative' }}>
         <Doughnut
           data={{
             labels: props.etiquetas,

@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp } from '../uso';
 import { pct, usd, numPlain } from '../formato';
 import { Cargando, Kpi, Seccion } from '../componentes';
 import { GraficoBarras } from '../graficos';
+import { PanelErrores } from '../panelErrores';
+import { canonicoColor } from '../../dominio/clasificar';
 import type { FilaStock } from '../../dominio/calcular';
 
 const aNum = (v: string | number | null | undefined): number => {
@@ -12,12 +14,44 @@ const aNum = (v: string | number | null | undefined): number => {
 
 const claveFila = (f: { modelo: string; color: string }) => `${f.modelo}||${f.color}`;
 
+const tituloColor = (c: string): string => (c ? c.charAt(0).toUpperCase() + c.slice(1).toLowerCase() : 'Sin color');
+
 type Borrador = { inicial: string; facturadas: string };
 
 export default function Proyectados({ onIrARevision }: { onIrARevision: () => void }) {
   const { modelo, cfg, lotes, guardarStockManual, calculando } = useApp();
   const [borradores, setBorradores] = useState<Record<string, Borrador>>({});
   const [guardandoFila, setGuardandoFila] = useState<string | null>(null);
+
+  // ---------------------------------------------- stock agrupado por modelo
+  const tarjetasModelo = useMemo(() => {
+    if (!modelo) return [];
+    const porMod = new Map<
+      string,
+      {
+        filas: { f: FilaStock; colorDisplay: string }[];
+        inicial: number;
+        facturadas: number;
+        reservas: number;
+        saldo: number;
+        estimado: number;
+      }
+    >();
+    for (const f of modelo.stockFilas) {
+      const colorCanon = canonicoColor(cfg, f.color);
+      const e = porMod.get(f.modelo) ?? { filas: [], inicial: 0, facturadas: 0, reservas: 0, saldo: 0, estimado: 0 };
+      e.filas.push({ f, colorDisplay: colorCanon });
+      e.inicial += f.inicial;
+      e.facturadas += f.facturadas;
+      e.reservas += f.reservas;
+      e.saldo += f.saldo ?? 0;
+      e.estimado += aNum(f.estimadoNeto);
+      porMod.set(f.modelo, e);
+    }
+    return [...porMod.entries()]
+      .map(([modelo_, v]) => ({ modelo: modelo_, ...v }))
+      .sort((a, b) => b.saldo - a.saldo || b.estimado - a.estimado);
+  }, [modelo, cfg]);
 
   if (!modelo) return <Cargando texto="Calculando el modelo…" />;
   const d = modelo.dashboard;
@@ -82,24 +116,7 @@ export default function Proyectados({ onIrARevision }: { onIrARevision: () => vo
     }
   };
 
-  const total = (fn: (f: FilaStock) => number) => modelo.stockFilas.reduce((a, f) => a + fn(f), 0);
-  const enRevision = modelo.revision.length + modelo.errores.length;
-  const controlesMalos = d.conciliacion.filter((c) => !c.ok);
-
-  // Datos por modelo para gráficos (agrega colores)
-  const porModelo = new Map<string, { inicial: number; facturadas: number; reservas: number; saldo: number; estimado: number }>();
-  for (const f of modelo.stockFilas) {
-    const e = porModelo.get(f.modelo) ?? { inicial: 0, facturadas: 0, reservas: 0, saldo: 0, estimado: 0 };
-    e.inicial += f.inicial;
-    e.facturadas += f.facturadas;
-    e.reservas += f.reservas;
-    e.saldo += f.saldo ?? 0;
-    e.estimado += aNum(f.estimadoNeto);
-    porModelo.set(f.modelo, e);
-  }
-  const modelosChart = [...porModelo.entries()]
-    .map(([modelo_, v]) => ({ modelo: modelo_, ...v }))
-    .sort((a, b) => b.saldo - a.saldo);
+  const modelosChart = tarjetasModelo;
 
   return (
     <div>
@@ -108,25 +125,8 @@ export default function Proyectados({ onIrARevision }: { onIrARevision: () => vo
         <span className="mini">{calculando ? 'Recalculando…' : `Fórmula: ${cfg.formulaStock}`}</span>
       </div>
 
-      {/* ------------------------------------- Estado: revisión y conciliación */}
-      {(enRevision > 0 || !d.valido) && (
-        <div className={`banner ${!d.valido ? 'err' : 'warn'}`}>
-          {enRevision > 0 && (
-            <>
-              <strong>{enRevision} fila(s) en revisión</strong> — el reporte no está “válido” hasta resolverlas y
-              conciliar.{' '}
-            </>
-          )}
-          {!d.valido && (
-            <>
-              Conciliación con diferencias: {controlesMalos.map((c) => c.nombre).join(' · ')}.{' '}
-            </>
-          )}
-          <button className="chico" onClick={onIrARevision}>
-            Revisar ahora
-          </button>
-        </div>
-      )}
+      {/* --------------------------------------------- Errores y avisos */}
+      <PanelErrores onIrARevision={onIrARevision} />
 
       {/* ------------------------------------------------------ Tarjetas KPI */}
       <div className="kpis tarjetas">
@@ -160,101 +160,109 @@ export default function Proyectados({ onIrARevision }: { onIrARevision: () => vo
       </Seccion>
 
       {/* --------------------------------------------------------- Gráficos */}
+      <h4 className="grupo-titulo">Cómo se compone el stock</h4>
       <div className="grid-graficos">
         <GraficoBarras
-          titulo="Stock por modelo: inicial · facturadas · reservadas · proyectado"
+          titulo="Motos por modelo"
+          explicacion="Apilado por modelo: ya facturadas (verde) + con reserva activa (ámbar) + stock libre proyectado (celeste). La altura total es el stock inicial."
           etiquetas={modelosChart.map((m) => m.modelo)}
           series={[
-            { nombre: 'Inicial', datos: modelosChart.map((m) => m.inicial), color: '#7c5cff' },
             { nombre: 'Facturadas', datos: modelosChart.map((m) => m.facturadas), color: '#22c55e' },
             { nombre: 'Reservadas', datos: modelosChart.map((m) => m.reservas), color: '#e0a800' },
-            { nombre: 'Proyectado', datos: modelosChart.map((m) => m.saldo), color: '#4dc9f6' },
+            { nombre: 'Stock libre', datos: modelosChart.map((m) => m.saldo), color: '#4dc9f6' },
           ]}
+          apilado
+          alto={300}
         />
         <GraficoBarras
           titulo="Estimado neto por modelo (USD)"
+          explicacion="Cuánto representaría vender a precio de lista todo el stock libre de cada modelo (sin descontar costos)."
           etiquetas={modelosChart.map((m) => m.modelo)}
           series={[{ nombre: 'Estimado neto', datos: modelosChart.map((m) => m.estimado), color: '#22c55e' }]}
           moneda
+          alto={300}
         />
       </div>
 
-      {/* ------------------------------------------------------ Stock editable */}
-      <Seccion titulo="Stock editable por modelo y color" descripcion="Editá inicial y facturadas; todo lo demás se recalcula">
+      {/* ------------------------------------------- Stock editable en tarjetas */}
+      <Seccion
+        titulo="Stock editable por modelo y color"
+        descripcion="Una tarjeta por modelo · 3 columnas de colores"
+      >
         <p className="difuso" style={{ marginTop: 0 }}>
           Editá el <strong>stock inicial</strong> y las <strong>facturadas</strong> de cada modelo+color: el saldo
           proyectado y el estimado neto se recalculan al guardar. Las facturadas en “auto” siguen el Excel; “Manual”
           fija el número que vos cargues.
         </p>
-        {modelo.stockFilas.length === 0 ? (
+        {tarjetasModelo.length === 0 ? (
           <div className="banner warn">
             No hay filas de stock todavía. Cargá el Excel de stock o agregá filas desde la pestaña Stock.
           </div>
         ) : (
-          <div className="scroll-x">
-            <table>
-              <thead>
-                <tr>
-                  <th>Modelo</th>
-                  <th>Color</th>
-                  <th className="num">Inicial</th>
-                  <th className="num">Facturadas</th>
-                  <th className="num">Reservadas</th>
-                  <th className="num">Saldo proy.</th>
-                  <th className="num">Precio lista</th>
-                  <th className="num">Estimado neto</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {modelo.stockFilas.map((f) => {
-                  const k = claveFila(f);
-                  const b = borradorDe(f);
-                  const manual = f.facturadasManual !== null;
-                  const ocupado = guardandoFila === k;
-                  return (
-                    <tr key={k}>
-                      <td>{f.modelo}</td>
-                      <td>{f.color}</td>
-                      <td className="num">
-                        <input
-                          className="celda-num"
-                          value={b.inicial}
-                          disabled={ocupado}
-                          onChange={(e) => cambiarBorrador(f, { inicial: e.target.value })}
-                        />
-                      </td>
-                      <td className="num">
-                        <input
-                          className="celda-num"
-                          value={b.facturadas}
-                          disabled={ocupado}
-                          onChange={(e) => cambiarBorrador(f, { facturadas: e.target.value })}
-                        />
-                        {manual ? (
-                          <span className="badge warn" title={`El Excel calcula ${f.facturadasCalculadas}`}>
-                            manual
+          <div className="stock-modelos">
+            {tarjetasModelo.map((m) => (
+              <div className="tarjeta-modelo" key={m.modelo}>
+                <div className="tarjeta-modelo-head">
+                  <strong>{m.modelo}</strong>
+                  <span className="mini">
+                    inicial {m.inicial} · reservadas {m.reservas} · libre {m.saldo} · {usd(m.estimado, cfg)}
+                  </span>
+                </div>
+                <div className="colores-grid">
+                  {m.filas.map(({ f, colorDisplay }) => {
+                    const k = claveFila(f);
+                    const b = borradorDe(f);
+                    const manual = f.facturadasManual !== null;
+                    const ocupado = guardandoFila === k;
+                    return (
+                      <div className="tarjeta-color" key={k}>
+                        <div className="tarjeta-color-titulo">{tituloColor(colorDisplay)}</div>
+                        <div className="tarjeta-color-campos">
+                          <label>
+                            Inicial
+                            <input
+                              className="celda-num"
+                              value={b.inicial}
+                              disabled={ocupado}
+                              onChange={(e) => cambiarBorrador(f, { inicial: e.target.value })}
+                            />
+                          </label>
+                          <label>
+                            Facturadas{' '}
+                            {manual ? (
+                              <span className="badge warn" title={`El Excel calcula ${f.facturadasCalculadas}`}>
+                                manual
+                              </span>
+                            ) : (
+                              <span className="badge info" title="Conteo calculado desde el Excel de ventas">
+                                auto
+                              </span>
+                            )}
+                            <input
+                              className="celda-num"
+                              value={b.facturadas}
+                              disabled={ocupado}
+                              onChange={(e) => cambiarBorrador(f, { facturadas: e.target.value })}
+                            />
+                          </label>
+                        </div>
+                        <div className="tarjeta-color-stats">
+                          <span title="Motos con reserva activa">Reservadas: {f.reservas}</span>
+                          <span title="Saldo proyectado según la fórmula">
+                            Libre:{' '}
+                            {f.saldo === null ? (
+                              <span className="badge err">fórmula inválida</span>
+                            ) : (
+                              <strong style={{ color: f.saldo > 0 ? 'var(--ok-suave)' : undefined }}>{f.saldo}</strong>
+                            )}
                           </span>
-                        ) : (
-                          <span className="badge info" title="Conteo calculado desde el Excel de ventas">
-                            auto
+                          <span title="Precio de lista">
+                            Precio:{' '}
+                            {f.precio === null ? <span className="badge warn">sin precio</span> : usd(f.precio, cfg)}
                           </span>
-                        )}
-                      </td>
-                      <td className="num">{f.reservas}</td>
-                      <td className="num">
-                        {f.saldo === null ? (
-                          <span className="badge err">fórmula inválida</span>
-                        ) : (
-                          <strong style={{ color: f.saldo > 0 ? 'var(--ok-suave)' : undefined }}>{f.saldo}</strong>
-                        )}
-                      </td>
-                      <td className="num">
-                        {f.precio === null ? <span className="badge warn">sin precio</span> : usd(f.precio, cfg)}
-                      </td>
-                      <td className="num">{usd(f.estimadoNeto, cfg)}</td>
-                      <td>
-                        <div className="fila" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                          <span>Estimado: {usd(f.estimadoNeto, cfg)}</span>
+                        </div>
+                        <div className="fila" style={{ gap: 6 }}>
                           <button className="chico primario" disabled={ocupado} onClick={() => void guardarFila(f)}>
                             {ocupado ? '…' : 'Guardar'}
                           </button>
@@ -269,36 +277,12 @@ export default function Proyectados({ onIrARevision }: { onIrARevision: () => vo
                             </button>
                           )}
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={2}>
-                    <strong>TOTAL</strong>
-                  </td>
-                  <td className="num">
-                    <strong>{total((f) => f.inicial)}</strong>
-                  </td>
-                  <td className="num">
-                    <strong>{total((f) => f.facturadas)}</strong>
-                  </td>
-                  <td className="num">
-                    <strong>{total((f) => f.reservas)}</strong>
-                  </td>
-                  <td className="num">
-                    <strong>{total((f) => f.saldo ?? 0)}</strong>
-                  </td>
-                  <td></td>
-                  <td className="num">
-                    <strong>{usd(d.estimadoStockNeto, cfg)}</strong>
-                  </td>
-                  <td></td>
-                </tr>
-              </tfoot>
-            </table>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </Seccion>

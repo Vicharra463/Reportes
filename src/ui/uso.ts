@@ -60,6 +60,8 @@ export interface AppApi {
   confirmarCola: (sim: SimulacionConArchivos) => Promise<number>;
   // operaciones
   aplicarCorreccion: (c: CorreccionInput) => Promise<void>;
+  /** Aplica varias correcciones en bloque (una sola recarga final). Devuelve cuántas reglas se crearon. */
+  aplicarCorrecciones: (cs: CorreccionInput[]) => Promise<number>;
   /** Guarda stock inicial y, opcionalmente, un override manual de facturadas (null = volver al cálculo del Excel). */
   guardarStockManual: (modelo: string, color: string, inicial: string, facturadasManual?: string | null) => Promise<void>;
   editarCfg: (seccion: string, mutar: (cfg: Configuracion) => void) => Promise<void>;
@@ -265,6 +267,31 @@ export function useProveedor(): AppApi {
       await db.agregarRegla(rg);
       await recargarTodo();
       alertas.toast(`Corrección aprendida: ${c.tipo} → ${c.valor}`);
+    },
+    [recargarTodo],
+  );
+
+  const aplicarCorrecciones = useCallback(
+    async (cs: CorreccionInput[]): Promise<number> => {
+      if (!cs.length) return 0;
+      let creadas = 0;
+      for (const c of cs) {
+        const textoBase =
+          c.tipo === 'modelo'
+            ? c.registro.sku ?? c.registro.descripcion ?? String(c.registro.fila)
+            : c.registro.descripcion ?? c.registro.sku ?? String(c.registro.fila);
+        const rg = crearReglaCorreccion({
+          tipo: c.tipo,
+          textoFuente: textoBase,
+          columna: null,
+          valor: c.valor,
+          notas: 'sugerencia segura del panel de errores',
+        });
+        await db.agregarRegla(rg);
+        creadas++;
+      }
+      await recargarTodo();
+      return creadas;
     },
     [recargarTodo],
   );
@@ -486,6 +513,7 @@ export function useProveedor(): AppApi {
       simularCola,
       confirmarCola,
       aplicarCorreccion,
+      aplicarCorrecciones,
       guardarStockManual,
       editarCfg,
       revertirCambio,
@@ -517,6 +545,7 @@ export function useProveedor(): AppApi {
       simularCola,
       confirmarCola,
       aplicarCorreccion,
+      aplicarCorrecciones,
       guardarStockManual,
       editarCfg,
       revertirCambio,

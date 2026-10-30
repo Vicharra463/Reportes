@@ -2,13 +2,20 @@ import { useApp } from '../uso';
 import { pct, usd, numPlain, fechaCorta } from '../formato';
 import { Cargando, Kpi, Seccion } from '../componentes';
 import { GraficoAnillo, GraficoBarras } from '../graficos';
+import { PanelErrores } from '../panelErrores';
 
 const aNum = (v: string | number | null | undefined): number => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 
-export default function Dashboard({ onIrACarga }: { onIrACarga: () => void }) {
+export default function Dashboard({
+  onIrACarga,
+  onIrARevision,
+}: {
+  onIrACarga: () => void;
+  onIrARevision: () => void;
+}) {
   const { modelo, cfg, lotes, generarReporteExcel, calculando } = useApp();
 
   if (!modelo) return <Cargando texto="Calculando el modelo…" />;
@@ -46,31 +53,27 @@ export default function Dashboard({ onIrACarga }: { onIrACarga: () => void }) {
       <div className="fila" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
         <h2>Cobranza y reservas</h2>
         <div className="fila">
-          <button
-  className="primario"
-  onClick={async () => {
-    console.log('click, calculando =', calculando);
-    try {
-      await generarReporteExcel();
-      console.log('reporte generado');
-    } catch (e) {
-      console.error('Error al generar reporte:', e);
-      alert('Error: ' + (e instanceof Error ? e.message : String(e)));
-    }
-  }}
-  disabled={calculando}
->
-  Descargar reporte Excel
-</button>
+          <button className="primario" onClick={() => void generarReporteExcel()} disabled={calculando}>
+            {calculando ? 'Generando…' : 'Descargar reporte Excel'}
+          </button>
         </div>
       </div>
 
-      {/* ------------------------------------------------------ Tarjetas KPI */}
+      {/* ---------------------------------------------- Errores y avisos */}
+      <PanelErrores onIrARevision={onIrARevision} />
+
+      {/* ------------------------------------------------------ Cobranza */}
+      <h4 className="grupo-titulo">Cobranza</h4>
       <div className="kpis tarjetas">
         <Kpi etiqueta="Valor neto reservas" valor={usd(d.valorNeto, cfg)} ayuda="Precio de lista − descuentos, por reserva" />
         <Kpi etiqueta="Cobrado" valor={usd(d.cobrado, cfg)} tono="verde" ayuda="Suma de anticipos vigentes" />
         <Kpi etiqueta="Saldo por cobrar" valor={usd(d.saldo, cfg)} tono="ambar" />
-        <Kpi etiqueta="Avance de cobro" valor={pct(d.avance)} tono={d.avance < 0.5 ? 'rojo' : 'verde'} />
+        <Kpi etiqueta="Avance de cobro" valor={pct(d.avance)} tono={d.avance < 0.5 ? 'rojo' : 'verde'} ayuda="Cobrado ÷ valor neto" />
+      </div>
+
+      {/* -------------------------------------------- Operación */}
+      <h4 className="grupo-titulo">Reservas y facturación</h4>
+      <div className="kpis tarjetas">
         <Kpi etiqueta="Reservas (pedidos)" valor={numPlain(d.reservas)} />
         <Kpi etiqueta="Motos reservadas" valor={numPlain(d.motosReservadas)} />
         <Kpi etiqueta="Cobradas 100%" valor={numPlain(d.cobradas100)} tono="verde" />
@@ -80,15 +83,25 @@ export default function Dashboard({ onIrACarga }: { onIrACarga: () => void }) {
       </div>
 
       {/* --------------------------------------------------------- Gráficos */}
+      <h4 className="grupo-titulo">Cómo se compone la plata</h4>
       <div className="grid-graficos">
         <GraficoAnillo
           titulo="Cobrado vs saldo"
+          explicacion="De todo el valor neto reservado, cuánto ya cobraste y cuánto todavía falta cobrar."
           etiquetas={['Cobrado', 'Saldo por cobrar']}
           datos={[aNum(d.cobrado), aNum(d.saldo)]}
           moneda
         />
+        <GraficoAnillo
+          titulo="Reservas por estado"
+          explicacion="Distribución del valor neto según el estado de cada reserva (pagada, pago parcial, etc.)."
+          etiquetas={estadosOrden.map(([k]) => k)}
+          datos={estadosOrden.map(([, v]) => v.usd)}
+          moneda
+        />
         <GraficoBarras
           titulo="Cobrado y saldo por modelo (top 10)"
+          explicacion="Por cada modelo: lo cobrado (verde) y lo que falta (ámbar). La altura total es el valor neto del modelo."
           etiquetas={modelosChart.map((m) => m.modelo)}
           series={[
             { nombre: 'Cobrado', datos: modelosChart.map((m) => aNum(m.cobrado)), color: '#22c55e' },
@@ -96,20 +109,7 @@ export default function Dashboard({ onIrACarga }: { onIrACarga: () => void }) {
           ]}
           apilado
           moneda
-        />
-        <GraficoBarras
-          titulo="Clientes y motos en reserva por modelo"
-          etiquetas={modelosChart.map((m) => m.modelo)}
-          series={[
-            { nombre: 'Clientes', datos: modelosChart.map((m) => m.clientes), color: '#7c5cff' },
-            { nombre: 'Motos', datos: modelosChart.map((m) => m.motos), color: '#4dc9f6' },
-          ]}
-        />
-        <GraficoAnillo
-          titulo="Reservas por estado (USD neto)"
-          etiquetas={estadosOrden.map(([k]) => k)}
-          datos={estadosOrden.map(([, v]) => v.usd)}
-          moneda
+          alto={300}
         />
       </div>
 

@@ -171,15 +171,16 @@ tfoot td {
   background: var(--panel);
   border: 1px solid var(--borde);
   border-radius: var(--radio);
-  padding: 18px;
-  margin-bottom: 16px;
+  padding: 22px;
+  margin-bottom: 20px;
   box-shadow: var(--sombra);
 }
 
 .kpis {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 12px;
+  gap: 14px;
+  margin-bottom: 8px;
 }
 
 .kpi {
@@ -250,8 +251,8 @@ tfoot td {
 .grid-graficos {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 20px;
+  margin-bottom: 20px;
 }
 
 .grafico-panel {
@@ -801,4 +802,215 @@ footer {
   .principal {
     padding: 14px 12px 0;
   }
+}
+
+/* ------------------------------------------------------- Títulos de grupo */
+.grupo-titulo {
+  margin: 26px 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--texto-2);
+}
+
+.grupo-titulo:first-of-type {
+  margin-top: 18px;
+}
+
+/* Explicación breve bajo el título de un gráfico */
+.explicacion {
+  margin: -2px 0 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--texto-2);
+  max-width: 60ch;
+}
+
+/* ------------------------------------------------------ Panel de errores */
+.panel-errores {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  padding: 18px 20px;
+  margin-bottom: 20px;
+  box-shadow: var(--sombra);
+}
+
+.problema {
+  border: 1px solid var(--borde);
+  border-left-width: 4px;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-top: 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.problema ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.problema li {
+  margin-bottom: 4px;
+}
+
+.problema.err {
+  border-left-color: var(--error);
+  background: rgba(255, 90, 90, 0.06);
+}
+
+.problema.warn {
+  border-left-color: var(--alerta);
+  background: rgba(224, 168, 0, 0.07);
+}
+
+.problema.info {
+  border-left-color: var(--borde-fuerte);
+  background: rgba(124, 92, 255, 0.05);
+}
+
+.sugerencias-lista {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.panel-errores .sugerencia {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  background: var(--panel-2);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.panel-errores .sugerencia .texto-fila {
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--texto-2);
+}
+
+.panel-errores .sugerencia .sugiere {
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------- Stock: tarjetas por modelo */
+.stock-modelos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 18px;
+}
+
+.tarjeta-modelo {
+  background: linear-gradient(160deg, var(--panel-2), var(--panel));
+  border: 1px solid var(--borde);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: var(--sombra);
+}
+
+.tarjeta-modelo-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--borde);
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+}
+
+.tarjeta-modelo-head strong {
+  font-size: 16px;
+  letter-spacing: 0.3px;
+}
+
+.colores-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.tarjeta-color {
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tarjeta-color-titulo {
+  font-weight: 600;
+  font-size: 13.5px;
+  text-transform: capitalize;
+}
+
+.tarjeta-color-campos {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tarjeta-color-campos label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--texto-2);
+}
+
+.tarjeta-color-campos .celda-num {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tarjeta-color-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--texto-2);
+}
+
+@media (max-width: 1100px) {
+  .colores-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .colores-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ------------------------------------------- SweetAlert de carga (grande) */
+.swal2-popup.swal-tema.swal-cargando {
+  min-width: 360px;
+  padding: 28px 32px;
+  border-radius: 14px;
+}
+
+.swal2-popup.swal-tema.swal-cargando .swal2-title.swal-titulo {
+  font-size: 20px;
+}
+
+.swal2-popup.swal-tema.swal-cargando .swal2-html-container.swal-texto {
+  font-size: 14px;
+  margin-top: 6px;
 }

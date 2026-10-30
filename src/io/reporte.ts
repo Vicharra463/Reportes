@@ -839,7 +839,7 @@ export async function generarReporte(d: DatosReporte): Promise<ExcelJS.Workbook>
     /* sin gráficos: el reporte sigue siendo válido */
   }
 
-  return hojas;
+  return wb;
 }
 
 interface SpecGrafico {
@@ -948,12 +948,34 @@ async function agregarGraficos(wb: ExcelJS.Workbook, ws: ExcelJS.Worksheet, d: D
 }
 
 export async function descargarReporte(d: DatosReporte): Promise<void> {
-  const hojas = await generarReporte(d);
-  void hojas;
-  const wb = ((): ExcelJS.Workbook | null => {
-    // generarReporte devuelve las hojas para tests; para descargar reconstruimos el wb
-    return null;
-  })();
-  void wb;
-  throw new Error('placeholder');
+  const wb = await generarReporte(d);
+  let buf: ArrayBuffer;
+  try {
+    buf = (await wb.xlsx.writeBuffer()) as ArrayBuffer;
+  } catch (e) {
+    // ExcelJS (bundle navegador) a veces no serializa las imágenes de los
+    // gráficos: reintentamos sin ellas — el reporte sigue siendo válido.
+    try {
+      const model = (wb as unknown as { model?: { media?: unknown[] } }).model;
+      if (model) model.media = [];
+      buf = (await wb.xlsx.writeBuffer()) as ArrayBuffer;
+    } catch {
+      throw new Error(
+        `No se pudo escribir el archivo Excel (${e instanceof Error ? e.message : String(e)}). Probá recargar la página.`,
+      );
+    }
+  }
+  const blob = new Blob([buf], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `top-motors-reporte-${d.generadoISO.slice(0, 10)}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => {
+    if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(url);
+  }, 10000);
 }

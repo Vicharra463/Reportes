@@ -164,27 +164,16 @@ function Contenido() {
         </header>
 
         {app.error && <div className="banner err">{app.error}</div>}
-        {(revisiones > 0 || errores > 0) && (vista === 'dashboard' || vista === 'proyectados') && (
-          <div className="banner warn">
-            {revisiones + errores} fila(s) en revisión {errores > 0 ? `y ${errores} en error ` : ''}— el reporte no
-            está “válido” hasta resolverlas y conciliar (los controles de coherencia del Dashboard).{' '}
-            <button className="chico" onClick={() => setVista('revision')}>
-              Revisar ahora
-            </button>
-          </div>
-        )}
-        {!valido && (vista === 'dashboard' || vista === 'proyectados') && app.modelo && (
-          <div className="banner err">
-            Conciliación: {app.modelo.dashboard.conciliacion.filter((c) => !c.ok).map((c) => c.nombre).join(' · ')}
-          </div>
-        )}
 
         <main>
           {vista === 'dashboard' && (
-            <Dashboard onIrACarga={() => { setVista('carga'); setIrACarga(true); }} />
+            <Dashboard
+              onIrACarga={() => { setVista('carga'); setIrACarga(true); }}
+              onIrARevision={() => setVista('revision')}
+            />
           )}
           {vista === 'proyectados' && (
-            <Proyectados onIrARevision={() => { setVista('carga'); setIrACarga(true); }} />
+            <Proyectados onIrARevision={() => setVista('revision')} />
           )}
           {vista === 'carga' && (
             <CargaDatos arrancarEnPaso={irACarga} onCargado={() => { setVista('dashboard'); setIrACarga(false); }} />
