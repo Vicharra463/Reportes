@@ -202,7 +202,9 @@ export default function Proyectados({ onIrARevision }: { onIrARevision: () => vo
                 <div className="tarjeta-modelo-head">
                   <strong>{m.modelo}</strong>
                   <span className="mini">
-                    inicial {m.inicial} · reservadas {m.reservas} · libre {m.saldo} · {usd(m.estimado, cfg)}
+                    inicial {m.inicial} · reservadas {m.reservas} ·{' '}
+                    <span style={{ color: m.saldo < 0 ? 'var(--alerta)' : undefined }}>libre {m.saldo}</span> ·{' '}
+                    {usd(m.estimado, cfg)}
                   </span>
                 </div>
                 <div className="colores-grid">
@@ -245,20 +247,39 @@ export default function Proyectados({ onIrARevision }: { onIrARevision: () => vo
                         </div>
                         <div className="tarjeta-color-stats">
                           <span title="Motos con reserva activa">Reservadas: {f.reservas}</span>
-                          <span title="Saldo proyectado según la fórmula">
+                          <span title="Saldo proyectado según la fórmula (inicial − facturadas − reservadas)">
                             Libre:{' '}
                             {f.saldo === null ? (
                               <span className="badge err">fórmula inválida</span>
                             ) : (
-                              <strong style={{ color: f.saldo > 0 ? 'var(--ok-suave)' : undefined }}>{f.saldo}</strong>
+                              <strong
+                                style={{
+                                  color:
+                                    f.saldo > 0 ? 'var(--ok-suave)' : f.saldo < 0 ? 'var(--alerta)' : undefined,
+                                }}
+                              >
+                                {f.saldo}
+                              </strong>
                             )}
                           </span>
-                          <span title="Precio de lista">
+                          <span
+                            title={
+                              f.precio === null
+                                ? 'Este modelo+color no tiene precio de lista en Configuración → Precios: agregalo ahí para que sume al estimado.'
+                                : 'Precio de lista'
+                            }
+                          >
                             Precio:{' '}
                             {f.precio === null ? <span className="badge warn">sin precio</span> : usd(f.precio, cfg)}
                           </span>
                           <span>Estimado: {usd(f.estimadoNeto, cfg)}</span>
                         </div>
+                        {f.saldo !== null && f.saldo < 0 && Number(b.inicial) === 0 && (
+                          <p className="mini" style={{ margin: '2px 0 0', color: 'var(--alerta)' }}>
+                            Sin stock inicial cargado: la venta queda como deuda (−{Math.abs(f.saldo)}). Cargá el
+                            inicial arriba para que el saldo cierre en 0.
+                          </p>
+                        )}
                         <div className="fila" style={{ gap: 6 }}>
                           <button className="chico primario" disabled={ocupado} onClick={() => void guardarFila(f)}>
                             {ocupado ? '…' : 'Guardar'}

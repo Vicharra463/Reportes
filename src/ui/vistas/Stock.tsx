@@ -113,7 +113,11 @@ export default function Stock() {
                       {f.saldo === null ? (
                         <span className="badge err">fórmula inválida</span>
                       ) : (
-                        <strong style={{ color: f.saldo > 0 ? 'var(--ok-suave)' : undefined }}>{f.saldo}</strong>
+                        <strong
+                          style={{ color: f.saldo > 0 ? 'var(--ok-suave)' : f.saldo < 0 ? 'var(--alerta)' : undefined }}
+                        >
+                          {f.saldo}
+                        </strong>
                       )}
                     </td>
                     <td className="num">{f.precio === null ? <span className="badge warn">sin precio</span> : usd(f.precio, cfg)}</td>
