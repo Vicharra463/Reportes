@@ -2,6 +2,7 @@ import { useApp } from '../uso';
 import type { Configuracion } from '../../dominio/configuracion';
 import type { MapeoColumnas } from '../../tipos';
 import { hayTasas, tasaVigente, TC_DIAS_TOLERANCIA } from '../../dominio/tc';
+import * as alertas from '../alertas';
 
 const ROLES: { rol: keyof MapeoColumnas; etiqueta: string }[] = [
   { rol: 'fecha', etiqueta: 'Fecha' },
@@ -27,8 +28,27 @@ const ROLES: { rol: keyof MapeoColumnas; etiqueta: string }[] = [
 ];
 
 export default function ConfiguracionVista() {
-  const { cfg, editarCfg, tc } = useApp();
+  const { cfg, editarCfg, tc, restablecerTodo } = useApp();
   const mutar = (seccion: string, f: (c: Configuracion) => void) => void editarCfg(seccion, f);
+
+  const confirmarRestablecer = async () => {
+    const ok1 = await alertas.confirmar({
+      titulo: '¿Restablecer TODO?',
+      texto:
+        'Se borran todos los archivos importados, las reglas de aprendizaje, el stock y el historial de cambios. ' +
+        'La configuración vuelve a los valores de fábrica. Esta acción no se puede deshacer.',
+      peligro: true,
+      confirmarTexto: 'Sí, borrar todo',
+    });
+    if (!ok1) return;
+    const ok2 = await alertas.confirmar({
+      titulo: 'Última confirmación',
+      texto: '¿Seguro? Si querés conservar algo, exportá un backup antes de restablecer.',
+      peligro: true,
+      confirmarTexto: 'Borrar definitivamente',
+    });
+    if (ok2) await restablecerTodo();
+  };
 
   const texto = (valor: string, set: (v: string) => void, ancho = 340) => (
     <input value={valor} style={{ width: ancho }} onChange={(e) => set(e.target.value)} />
@@ -294,6 +314,18 @@ export default function ConfiguracionVista() {
             </div>
           </details>
         ))}
+      </div>
+
+      <div className="panel" style={{ borderColor: 'rgba(220, 38, 38, 0.45)' }}>
+        <h3 style={{ color: '#f87171' }}>Zona de peligro</h3>
+        <p className="difuso" style={{ marginTop: 0 }}>
+          Si los datos se ven mal (un solo modelo o color en todo el dashboard), una regla de aprendizaje o una
+          configuración guardada pueden estar pisando la clasificación. Restablecer borra todo y volvés a importar
+          limpio. Antes podés exportar un backup desde el encabezado.
+        </p>
+        <button className="peligro" onClick={() => void confirmarRestablecer()}>
+          Restablecer todo (base, reglas y configuración)
+        </button>
       </div>
     </div>
   );

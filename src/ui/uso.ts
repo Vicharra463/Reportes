@@ -72,6 +72,8 @@ export interface AppApi {
   generarReporteExcel: () => Promise<void>;
   exportarBackup: () => void;
   importarBackup: (file: File) => Promise<number>;
+  /** Zona de peligro: borra base local + reglas + stock y restaura la config de fábrica. */
+  restablecerTodo: () => Promise<void>;
   recalcular: () => Promise<void>;
 }
 
@@ -268,8 +270,12 @@ export function useProveedor(): AppApi {
     async (c: CorreccionInput) => {
       const textoBase =
         c.tipo === 'modelo'
-          ? c.registro.sku ?? c.registro.descripcion ?? String(c.registro.fila)
-          : c.registro.descripcion ?? c.registro.sku ?? String(c.registro.fila);
+          ? c.registro.sku || c.registro.descripcion
+          : c.registro.descripcion || c.registro.sku;
+      if (!textoBase) {
+        alertas.fallo('No se puede aprender de esta fila', 'La fila no tiene SKU ni descripción: la corrección necesita un texto de búsqueda.');
+        return;
+      }
       const columnaOrigen =
         c.tipo === 'modelo' ? (c.registro.clasifModelo?.columna ?? null) : (c.registro.clasifColor?.columna ?? null);
       const rg = crearReglaCorreccion({
@@ -293,8 +299,9 @@ export function useProveedor(): AppApi {
       for (const c of cs) {
         const textoBase =
           c.tipo === 'modelo'
-            ? c.registro.sku ?? c.registro.descripcion ?? String(c.registro.fila)
-            : c.registro.descripcion ?? c.registro.sku ?? String(c.registro.fila);
+            ? c.registro.sku || c.registro.descripcion
+            : c.registro.descripcion || c.registro.sku;
+        if (!textoBase) continue; // sin texto no hay regla que aplicar
         const rg = crearReglaCorreccion({
           tipo: c.tipo,
           textoFuente: textoBase,
@@ -506,6 +513,33 @@ export function useProveedor(): AppApi {
     [recargarTodo],
   );
 
+  /** Zona de peligro: borra TODA la base local (lotes, registros, reglas,
+   * stock, historial) y restaura la configuración de fábrica. Sirve para
+   * salir de un estado corrompido (una regla demasiado amplia, una config
+   * vieja) y empezar de cero con una importación limpia. */
+  const restablecerTodo = useCallback(async () => {
+    alertas.cargando('Restableciendo…', 'Borrando base local y configuración.');
+    try {
+      await db.vaciarTodo();
+      const def = configPorDefecto();
+      guardarConfig(def);
+      setCfg(def);
+      setLotes([]);
+      setReglas([]);
+      setStock([]);
+      setCambios([]);
+      setCola([]);
+      registrosRef.current = [];
+      setModelo(null);
+      await recalcular();
+      alertas.exito('Todo restablecido', 'Base y configuración en valores de fábrica. Volvé a importar tus Excel.');
+    } catch (e) {
+      alertas.fallo('No se pudo restablecer', alertas.mensajeError(e));
+    } finally {
+      alertas.cerrarCargando();
+    }
+  }, [recalcular]);
+
   return useMemo<AppApi>(
     () => ({
       listo,
@@ -538,6 +572,7 @@ export function useProveedor(): AppApi {
       generarReporteExcel,
       exportarBackup,
       importarBackup,
+      restablecerTodo,
       recalcular,
     }),
     [
@@ -570,6 +605,7 @@ export function useProveedor(): AppApi {
       generarReporteExcel,
       exportarBackup,
       importarBackup,
+      restablecerTodo,
       recalcular,
     ],
   );

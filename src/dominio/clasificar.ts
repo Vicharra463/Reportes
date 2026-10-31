@@ -84,11 +84,13 @@ export function clasificarModelo(
     if (!norm) continue;
     const rc = rankColumna(t.columna, cfg);
 
-    // 0) Reglas de aprendizaje (aplican solo a su columna de origen, o a todas)
+    // 0) Reglas de aprendizaje (aplican solo a su columna de origen, o a todas).
+    // Match por borde de palabra: una regla corta como "moto" NO debe pisar
+    // todo "MOTOCICLETA XR190L…" — solo palabras completas ("navi", "x blade").
     for (const r of reglas) {
       if (r.tipo !== 'modelo' || !r.activa) continue;
       if (r.columna && r.columna !== t.columna) continue;
-      if (r.busqueda && norm.includes(r.busqueda)) {
+      if (r.busqueda && contieneToken(norm, r.busqueda)) {
         cand.push({ valor: r.valor, conf: 0.99, columna: t.columna, texto: raw, fuente: 'regla', rankMetodo: 0, rankColumna: rc });
       }
     }
@@ -165,7 +167,7 @@ export function clasificarColor(
     for (const r of reglas) {
       if (r.tipo !== 'color' || !r.activa) continue;
       if (r.columna && r.columna !== t.columna) continue;
-      if (r.busqueda && norm.includes(r.busqueda)) {
+      if (r.busqueda && contieneToken(norm, r.busqueda)) {
         cand.push({ valor: r.valor, conf: 0.99, columna: t.columna, texto: raw, fuente: 'regla', rankMetodo: 0, rankColumna: rc });
       }
     }

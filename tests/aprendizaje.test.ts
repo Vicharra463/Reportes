@@ -73,4 +73,22 @@ describe('aprendizaje por correcciones', () => {
     const conRegla = corrida([p, a], [regla]);
     expect(conRegla.reservas[0].color).toBe('Azul');
   });
+
+  it('una regla demasiado amplia no colapsa los modelos (matching por borde de palabra)', () => {
+    const a = mkReg({
+      tipo: 'anticipo',
+      categoria: 'ANTICIPOS',
+      documento: 'BV-9',
+      documentoTipo: 'BV',
+      pedido: 70,
+      importeUsd: '100.00',
+      descripcion: 'MOTOCICLETA XR190L ROJO',
+      fechaISO: '2026-10-01',
+    });
+    const p = mkReg({ nroPedido: 70, pedido: 70, sku: 'XR190L-ROJ', descripcion: 'MOTOCICLETA XR190L ROJO' });
+    const reglaMala = crearReglaCorreccion({ tipo: 'modelo', textoFuente: 'moto', columna: null, valor: 'DIO' });
+    const res = corrida([p, a], [reglaMala]);
+    expect(res.reservas).toHaveLength(1);
+    expect(res.reservas[0].modelo).toBe('XR190L');
+  });
 });

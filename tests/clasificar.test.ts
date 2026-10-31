@@ -82,3 +82,56 @@ describe('clasificarColor', () => {
     expect(r.clasif).toBeNull();
   });
 });
+
+describe('reglas de aprendizaje: matching por borde de palabra', () => {
+  const regla = (busqueda: string, valor: string, tipo: 'modelo' | 'color' = 'modelo') => ({
+    tipo,
+    busqueda,
+    busquedaOriginal: busqueda.toUpperCase(),
+    columna: null,
+    valor,
+    prioridad: 100,
+    activa: true,
+    origen: 'correccion' as const,
+    fechaISO: '2026-10-01',
+  });
+
+  it('una regla corta NO maschea dentro de palabras (moto ≠ MOTOCICLETA XR190L)', () => {
+    const r = clasificarModelo(
+      [{ columna: 'Descripción', texto: 'MOTOCICLETA XR190L ROJO' }],
+      cfg,
+      [regla('moto', 'DIO')],
+    );
+    expect(r.clasif?.valor).toBe('XR190L');
+    expect(r.clasif?.fuente).not.toBe('regla');
+  });
+
+  it('una regla corta sigue disparando cuando es palabra completa (kratoz)', () => {
+    const r = clasificarModelo(
+      [{ columna: 'glosa cabecera', texto: 'ENTREGA DE CASCO KRATOZ + TRAMITE' }],
+      cfg,
+      [regla('kratoz', 'DIO')],
+    );
+    expect(r.clasif?.valor).toBe('DIO');
+    expect(r.clasif?.fuente).toBe('regla');
+  });
+
+  it('una regla corta NO maschea prefijos de palabras (manten ≠ MANTENIMIENTOS)', () => {
+    const r = clasificarModelo(
+      [{ columna: 'glosa cabecera', texto: 'DOS MANTENIMIENTOS GRATIS MANO DE OBRA' }],
+      cfg,
+      [regla('manten', 'DIO')],
+    );
+    expect(r.clasif?.valor).not.toBe('DIO');
+  });
+
+  it('las reglas de color también usan borde de palabra (oj ≠ ROJO)', () => {
+    const r = clasificarColor(
+      [{ columna: 'Descripción', texto: 'MOTOCICLETA XR190L ROJO' }],
+      cfg,
+      [regla('oj', 'Azul', 'color')],
+    );
+    expect(normalizar(r.clasif?.valor)).toBe('rojo');
+    expect(r.clasif?.fuente).not.toBe('regla');
+  });
+});
