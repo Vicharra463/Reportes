@@ -1,8 +1,9 @@
-// Panel de "Errores y avisos": agrupa los problemas del cálculo y ofrece
-// correcciones PROVISIONALES (sugerencia de modelo/color con confianza alta)
-// que el usuario confirma con un click. Nunca se aplican solas a los totales.
+// Panel de "Errores y avisos" — vive SOLO dentro de la pestaña Por revisar.
+// Agrupa los problemas del cálculo y ofrece correcciones PROVISIONALES
+// (sugerencia de modelo/color) que el usuario confirma con un click.
+// Las sugerencias se calculan bajo demanda (botón): nunca al cargar la vista.
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useApp } from './uso';
 import type { Registro } from '../tipos';
 import type { TextoFuente } from '../dominio/clasificar';
@@ -27,6 +28,7 @@ interface Sugerencia {
 
 const UMBRAL_PROVISIONAL = 0.5;
 const UMBRAL_SEGURA = 0.75;
+const COTA_SUGERENCIAS = 300;
 
 function resumenFila(r: Registro): string {
   return [r.documento ?? (r.pedido ? `Pedido ${r.pedido}` : ''), r.sku ?? '', r.descripcion ?? '']
@@ -35,35 +37,50 @@ function resumenFila(r: Registro): string {
     .slice(0, 90);
 }
 
-export function PanelErrores({ onIrARevision }: { onIrARevision: () => void }) {
+export function PanelErrores() {
   const { modelo, cfg, reglas, aplicarCorreccion, aplicarCorrecciones } = useApp();
+  const [sugerencias, setSugerencias] = useState<Sugerencia[] | null>(null);
+  const [calculandoSug, setCalculandoSug] = useState(false);
   const [aplicando, setAplicando] = useState(false);
 
-  const sugerencias = useMemo<Sugerencia[]>(() => {
-    if (!modelo) return [];
-    const cfgProv = { ...cfg, umbralConfianza: UMBRAL_PROVISIONAL };
-    const out: Sugerencia[] = [];
-    for (const r of modelo.revision) {
-      if (!r.clasifModelo) {
-        const res = clasificarModelo(textosDe(r), cfgProv, reglas);
-        if (res.clasif?.valor && res.clasif.confianza >= UMBRAL_PROVISIONAL) {
-          out.push({ registro: r, tipo: 'modelo', valor: res.clasif.valor, conf: res.clasif.confianza });
+  // cuando cambian los datos, las sugerencias quedan viejas
+  useEffect(() => {
+    setSugerencias(null);
+  }, [modelo]);
+
+  const calcularSugerencias = useCallback(() => {
+    if (!modelo) return;
+    setCalculandoSug(true);
+    // cedemos el frame para que pinte el estado "Calculando…"
+    setTimeout(() => {
+      try {
+        const cfgProv = { ...cfg, umbralConfianza: UMBRAL_PROVISIONAL };
+        const out: Sugerencia[] = [];
+        for (const r of modelo.revision) {
+          if (!r.clasifModelo) {
+            const res = clasificarModelo(textosDe(r), cfgProv, reglas);
+            if (res.clasif?.valor && res.clasif.confianza >= UMBRAL_PROVISIONAL) {
+              out.push({ registro: r, tipo: 'modelo', valor: res.clasif.valor, conf: res.clasif.confianza });
+            }
+          }
+          if (!r.clasifColor) {
+            const res = clasificarColor(textosDe(r), cfgProv, reglas);
+            if (res.clasif?.valor && res.clasif.confianza >= UMBRAL_PROVISIONAL) {
+              out.push({ registro: r, tipo: 'color', valor: res.clasif.valor, conf: res.clasif.confianza });
+            }
+          }
+          if (out.length >= COTA_SUGERENCIAS) break;
         }
+        setSugerencias(out);
+      } finally {
+        setCalculandoSug(false);
       }
-      if (!r.clasifColor) {
-        const res = clasificarColor(textosDe(r), cfgProv, reglas);
-        if (res.clasif?.valor && res.clasif.confianza >= UMBRAL_PROVISIONAL) {
-          out.push({ registro: r, tipo: 'color', valor: res.clasif.valor, conf: res.clasif.confianza });
-        }
-      }
-      if (out.length > 400) break;
-    }
-    return out;
+    }, 30);
   }, [modelo, cfg, reglas]);
 
   if (!modelo) return null;
 
-  const seguras = sugerencias.filter((s) => s.conf >= UMBRAL_SEGURA);
+  const seguras = (sugerencias ?? []).filter((s) => s.conf >= UMBRAL_SEGURA);
   const errores = modelo.errores;
   const revision = modelo.revision;
   const duplicados = modelo.duplicados;
@@ -125,14 +142,16 @@ export function PanelErrores({ onIrARevision }: { onIrARevision: () => void }) {
           )}
         </h3>
         <div className="fila" style={{ gap: 8 }}>
+          {revision.length > 0 && sugerencias === null && (
+            <button className="chico" disabled={calculandoSug} onClick={calcularSugerencias}>
+              {calculandoSug ? 'Calculando…' : 'Calcular sugerencias'}
+            </button>
+          )}
           {seguras.length > 0 && (
             <button className="primario chico" disabled={aplicando} onClick={() => void aplicarTodas()}>
               Corregir {seguras.length} sugerencia(s) segura(s)
             </button>
           )}
-          <button className="chico" onClick={onIrARevision}>
-            Revisar fila por fila
-          </button>
         </div>
       </div>
 
@@ -144,8 +163,8 @@ export function PanelErrores({ onIrARevision }: { onIrARevision: () => void }) {
               <li key={motivo}>
                 <em>{motivo}</em> ({rs.length} fila(s)).{' '}
                 <span className="difuso">
-                  Qué hacer: abrí el Excel fuente en la fila indicada (columna Archivo/Fila en Por revisar), corregí el
-                  dato y volvé a importar el archivo.
+                  Qué hacer: abrí el Excel fuente en la fila indicada (arriba, en la tabla), corregí el dato y volvé a
+                  importar el archivo.
                 </span>
               </li>
             ))}
@@ -157,10 +176,15 @@ export function PanelErrores({ onIrARevision }: { onIrARevision: () => void }) {
         <div className="problema warn">
           <strong>{revision.length} fila(s) sin clasificar — quedan FUERA de los totales hasta resolverlas.</strong>
           <p className="difuso" style={{ margin: '4px 0' }}>
-            Qué hacer: revisá las sugerencias de abajo (si coinciden, aplicalas con un click) o corregí fila por fila en
-            “Por revisar”. Al confirmar, la corrección se aprende y aplica en próximas cargas.
+            Qué hacer: si querés un atajo, calculá las sugerencias provisionales y aplicá las que coincidan; o corregí
+            fila por fila en la tabla de abajo. Al confirmar, la corrección se aprende y aplica en próximas cargas.
           </p>
-          {sugerencias.length > 0 && (
+          {sugerencias !== null && sugerencias.length === 0 && (
+            <p className="difuso" style={{ margin: 0 }}>
+              No se encontraron sugerencias con confianza mínima: corregí manualmente.
+            </p>
+          )}
+          {sugerencias !== null && sugerencias.length > 0 && (
             <div className="sugerencias-lista">
               {sugerencias.slice(0, 12).map((s, i) => (
                 <div className="sugerencia" key={`${s.registro.loteId}-${s.registro.fila}-${s.tipo}-${i}`}>
@@ -204,8 +228,8 @@ export function PanelErrores({ onIrARevision }: { onIrARevision: () => void }) {
           ))}
           <p className="difuso" style={{ margin: '4px 0' }}>
             Qué hacer: una diferencia suele venir de una fila en revisión/errónea o de un exceso mal clasificado.
-            Resolvé primero los puntos de arriba; si la diferencia persiste, revisá en “Por revisar” los documentos del
-            control afectado.
+            Resolvé primero los puntos de arriba; si la diferencia persiste, revisá los documentos del control
+            afectado.
           </p>
         </div>
       )}

@@ -98,7 +98,17 @@ export function useProveedor(): AppApi {
   stockRef.current = stock;
   reglasRef.current = reglas;
 
+  // Evita corridas concurrentes: si llega un recálculo mientras otro corre,
+  // se anota y se ejecuta UNO al terminar (coalescing) en vez de pisarse.
+  const recalculandoRef = useRef(false);
+  const recalculoPendienteRef = useRef(false);
+
   const recalcular = useCallback(async () => {
+    if (recalculandoRef.current) {
+      recalculoPendienteRef.current = true;
+      return;
+    }
+    recalculandoRef.current = true;
     setCalculando(true);
     setError(null);
     try {
@@ -113,7 +123,12 @@ export function useProveedor(): AppApi {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      recalculandoRef.current = false;
       setCalculando(false);
+      if (recalculoPendienteRef.current) {
+        recalculoPendienteRef.current = false;
+        void recalcular();
+      }
     }
   }, []);
 

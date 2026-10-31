@@ -167,13 +167,10 @@ function Contenido() {
 
         <main>
           {vista === 'dashboard' && (
-            <Dashboard
-              onIrACarga={() => { setVista('carga'); setIrACarga(true); }}
-              onIrARevision={() => setVista('revision')}
-            />
+            <Dashboard onIrACarga={() => { setVista('carga'); setIrACarga(true); }} />
           )}
           {vista === 'proyectados' && (
-            <Proyectados onIrARevision={() => setVista('revision')} />
+            <Proyectados onIrARevision={() => { setVista('carga'); setIrACarga(true); }} />
           )}
           {vista === 'carga' && (
             <CargaDatos arrancarEnPaso={irACarga} onCargado={() => { setVista('dashboard'); setIrACarga(false); }} />

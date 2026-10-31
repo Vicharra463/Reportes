@@ -1,5 +1,7 @@
-// Ejecuta el cálculo en un worker cuando es posible; si no (file://, tests,
-// navegador viejo), corre inline. La UI nunca nota la diferencia.
+// Ejecuta el cálculo en un worker persistente (se crea UNA vez y se reutiliza;
+// un worker inline nuevo por cálculo costaba cientos de ms de compilación).
+// Si el worker muere o no está disponible (file://, tests), corre inline.
+// Las peticiones llevan id: se pueden hacer concurrentes sin confundir respuestas.
 
 import { calcular, type ContextoCalculo, type ModeloCalculado } from '../dominio/calcular';
 
@@ -21,20 +23,58 @@ async function intentarWorker(): Promise<ConstructorWorker | null> {
   }
 }
 
-let enUso = false;
+interface Pendiente {
+  resolve: (r: ModeloCalculado) => void;
+  reject: (e: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
 
-export async function ejecutarCalculo(ctx: ContextoCalculo, opts?: { forzarInline?: boolean }): Promise<{
-  resultado: ModeloCalculado;
-  viaWorker: boolean;
-}> {
+let workerVivo: Worker | null = null;
+let seq = 0;
+const pendientes = new Map<number, Pendiente>();
+
+function descartarWorker(w: Worker, motivo: string): void {
+  if (workerVivo === w) workerVivo = null;
+  try {
+    w.terminate();
+  } catch {
+    /* noop */
+  }
+  for (const [, p] of pendientes) {
+    clearTimeout(p.timer);
+    p.reject(new Error(motivo));
+  }
+  pendientes.clear();
+}
+
+function obtenerWorker(Ctor: ConstructorWorker): Worker {
+  if (workerVivo) return workerVivo;
+  const w = new Ctor(new URL('../worker/procesar.worker.ts', import.meta.url), { type: 'module' });
+  w.onmessage = (ev: MessageEvent<{ id: number; ok: boolean; resultado?: ModeloCalculado; error?: string }>) => {
+    const p = pendientes.get(ev.data?.id);
+    if (!p) return;
+    pendientes.delete(ev.data.id);
+    clearTimeout(p.timer);
+    if (ev.data.ok && ev.data.resultado) p.resolve(ev.data.resultado);
+    else p.reject(new Error(ev.data.error ?? 'worker falló'));
+  };
+  w.onerror = () => descartarWorker(w, 'worker error');
+  w.onmessageerror = () => descartarWorker(w, 'worker: mensaje ilegible');
+  workerVivo = w;
+  return w;
+}
+
+export async function ejecutarCalculo(
+  ctx: ContextoCalculo,
+  opts?: { forzarInline?: boolean },
+): Promise<{ resultado: ModeloCalculado; viaWorker: boolean }> {
   if (!opts?.forzarInline && typeof Worker !== 'undefined') {
     const Ctor = await intentarWorker();
     if (Ctor) {
       try {
-        const r = await ejecutarEnWorker(Ctor, ctx);
-        return { resultado: r, viaWorker: true };
+        return { resultado: await ejecutarEnWorker(Ctor, ctx), viaWorker: true };
       } catch {
-        // cae al inline
+        // worker roto o timeout: cae al inline una vez
       }
     }
   }
@@ -45,48 +85,28 @@ export async function ejecutarCalculo(ctx: ContextoCalculo, opts?: { forzarInlin
 
 function ejecutarEnWorker(Ctor: ConstructorWorker, ctx: ContextoCalculo): Promise<ModeloCalculado> {
   return new Promise((resolve, reject) => {
-    if (enUso) {
-      reject(new Error('worker ocupado'));
-      return;
-    }
-    enUso = true;
     let w: Worker;
     try {
-      w = new Ctor(new URL('../worker/procesar.worker.ts', import.meta.url), { type: 'module' });
+      w = obtenerWorker(Ctor);
     } catch (e) {
-      enUso = false;
-      reject(e);
+      reject(e instanceof Error ? e : new Error(String(e)));
       return;
     }
-    const limpiar = () => {
-      enUso = false;
-      try {
-        w.terminate();
-      } catch {
-        /* noop */
-      }
-    };
+    const id = ++seq;
     const timer = setTimeout(() => {
-      limpiar();
+      pendientes.delete(id);
+      // si se colgó, lo descartamos y el siguiente vuelve a intentar
+      descartarWorker(w, 'timeout del worker');
       reject(new Error('timeout del worker'));
     }, 30000);
-    w.onmessage = (ev: MessageEvent<{ ok: boolean; resultado?: ModeloCalculado; error?: string }>) => {
-      clearTimeout(timer);
-      limpiar();
-      if (ev.data?.ok && ev.data.resultado) resolve(ev.data.resultado);
-      else reject(new Error(ev.data?.error ?? 'worker falló'));
-    };
-    w.onerror = (e) => {
-      clearTimeout(timer);
-      limpiar();
-      reject(e instanceof ErrorEvent ? new Error(e.message || 'worker error') : new Error('worker error'));
-    };
+    pendientes.set(id, { resolve, reject, timer });
     try {
-      w.postMessage(ctx);
+      w.postMessage({ ...ctx, id });
     } catch (e) {
+      pendientes.delete(id);
       clearTimeout(timer);
-      limpiar();
-      reject(e);
+      descartarWorker(w, 'worker no aceptó el mensaje');
+      reject(e instanceof Error ? e : new Error(String(e)));
     }
   });
 }

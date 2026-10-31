@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '../uso';
 import { Cargando } from '../componentes';
+import { PanelErrores } from '../panelErrores';
 import type { Registro } from '../../tipos';
+
+const POR_PAGINA = 40;
 
 function celdaClave(r: Registro): string {
   const doc = r.documento ?? '';
@@ -70,6 +73,8 @@ export default function PorRevisar() {
   const { modelo, cfg } = useApp();
   const [busqueda, setBusqueda] = useState('');
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
+  const [limiteRev, setLimiteRev] = useState(POR_PAGINA);
+  const [limiteErr, setLimiteErr] = useState(POR_PAGINA);
 
   if (!modelo) return <Cargando texto="Calculando el modelo…" />;
 
@@ -134,6 +139,9 @@ export default function PorRevisar() {
         Regla de oro: si la confianza está por debajo del umbral ({cfg.umbralConfianza}), el sistema NO adivina. Asigná
         el modelo o el color y la corrección queda aprendida.
       </p>
+
+      <PanelErrores />
+
       <div className="panel">
         <input
           placeholder="Buscar por documento, SKU, modelo, cliente, pedido…"
@@ -148,9 +156,14 @@ export default function PorRevisar() {
           <h3>Errores ({errores.length})</h3>
           <div className="scroll-x">
             <table>
-              <tbody>{errores.map((r) => fila(r, 'err'))}</tbody>
+              <tbody>{errores.slice(0, limiteErr).map((r) => fila(r, 'err'))}</tbody>
             </table>
           </div>
+          {errores.length > limiteErr && (
+            <button className="chico" style={{ marginTop: 10 }} onClick={() => setLimiteErr((l) => l + POR_PAGINA)}>
+              Mostrar más ({limiteErr} de {errores.length})
+            </button>
+          )}
         </div>
       )}
 
@@ -159,11 +172,18 @@ export default function PorRevisar() {
         {revision.length === 0 ? (
           <div className="banner ok">Nada pendiente: todas las filas tienen modelo y color con confianza suficiente.</div>
         ) : (
-          <div className="scroll-x">
-            <table>
-              <tbody>{revision.map((r) => fila(r, 'warn'))}</tbody>
-            </table>
-          </div>
+          <>
+            <div className="scroll-x">
+              <table>
+                <tbody>{revision.slice(0, limiteRev).map((r) => fila(r, 'warn'))}</tbody>
+              </table>
+            </div>
+            {revision.length > limiteRev && (
+              <button className="chico" style={{ marginTop: 10 }} onClick={() => setLimiteRev((l) => l + POR_PAGINA)}>
+                Mostrar más ({limiteRev} de {revision.length})
+              </button>
+            )}
+          </>
         )}
       </div>
 

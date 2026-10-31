@@ -2,20 +2,13 @@ import { useApp } from '../uso';
 import { pct, usd, numPlain, fechaCorta } from '../formato';
 import { Cargando, Kpi, Seccion } from '../componentes';
 import { GraficoAnillo, GraficoBarras } from '../graficos';
-import { PanelErrores } from '../panelErrores';
 
 const aNum = (v: string | number | null | undefined): number => {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
 };
 
-export default function Dashboard({
-  onIrACarga,
-  onIrARevision,
-}: {
-  onIrACarga: () => void;
-  onIrARevision: () => void;
-}) {
+export default function Dashboard({ onIrACarga }: { onIrACarga: () => void }) {
   const { modelo, cfg, lotes, generarReporteExcel, calculando } = useApp();
 
   if (!modelo) return <Cargando texto="Calculando el modelo…" />;
@@ -58,9 +51,6 @@ export default function Dashboard({
           </button>
         </div>
       </div>
-
-      {/* ---------------------------------------------- Errores y avisos */}
-      <PanelErrores onIrARevision={onIrARevision} />
 
       {/* ------------------------------------------------------ Cobranza */}
       <h4 className="grupo-titulo">Cobranza</h4>

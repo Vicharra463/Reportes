@@ -3,7 +3,6 @@ import { useApp } from '../uso';
 import { pct, usd, numPlain } from '../formato';
 import { Cargando, Kpi, Seccion } from '../componentes';
 import { GraficoBarras } from '../graficos';
-import { PanelErrores } from '../panelErrores';
 import { canonicoColor } from '../../dominio/clasificar';
 import type { FilaStock } from '../../dominio/calcular';
 
@@ -125,10 +124,8 @@ export default function Proyectados({ onIrARevision }: { onIrARevision: () => vo
         <span className="mini">{calculando ? 'Recalculando…' : `Fórmula: ${cfg.formulaStock}`}</span>
       </div>
 
-      {/* --------------------------------------------- Errores y avisos */}
-      <PanelErrores onIrARevision={onIrARevision} />
-
       {/* ------------------------------------------------------ Tarjetas KPI */}
+      <h4 className="grupo-titulo">Stock y estimado</h4>
       <div className="kpis tarjetas">
         <Kpi etiqueta="Stock inicial" valor={numPlain(d.stockInicial)} ayuda="Σ de las filas de stock cargadas" />
         <Kpi etiqueta="Facturadas" valor={numPlain(d.stockFacturadas)} ayuda="Motos ya facturadas (de las reservas)" />
