@@ -101,6 +101,15 @@ export default function Dashboard({ onIrACarga }: { onIrACarga: () => void }) {
           moneda
           alto={300}
         />
+        <GraficoBarras
+          titulo="Clientes y motos en reserva por modelo"
+          explicacion="Clientes distintos con pedido en reserva y motos reservadas, por modelo (top 10)."
+          etiquetas={modelosChart.map((m) => m.modelo)}
+          series={[
+            { nombre: 'Clientes', datos: modelosChart.map((m) => m.clientes), color: '#7c5cff' },
+            { nombre: 'Motos', datos: modelosChart.map((m) => m.motos), color: '#4dc9f6' },
+          ]}
+        />
       </div>
 
       {/* --------------------------------------------------------- Reservas */}
